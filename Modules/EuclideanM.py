@@ -229,7 +229,7 @@ def hmc(G, Z_init, a_init, num_samples, epsilon_init=0.05, std_dev=1.0, percenta
         if adapting and iter > 0:
             current_accept_rate = accept_count / total_updates if total_updates > 0 else 0
             if current_accept_rate < 0.80:
-                epsilon = np.max(np.array([0.01,0.99*epsilon])) 
+                epsilon = np.max(np.array([0.05,0.99*epsilon])) 
                 std_dev = np.max(np.array([0.05,0.99*std_dev]))
             elif current_accept_rate > 0.60:
                 epsilon = np.min(np.array([0.2,1.01*epsilon]))

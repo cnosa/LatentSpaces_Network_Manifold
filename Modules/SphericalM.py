@@ -15,69 +15,82 @@ np.random.seed(42)
 
 # Loglikelihood function and its gradient for the Euclidean model
 
-def loglikelihood(G,Z,a):
+def loglikelihood(G,Z,a,b):
     total = 0.0
     for i in G.nodes():
         for j in G.nodes():
-            dist = 0.5 * np.linalg.norm(Z[i] - Z[j])**2
-            eta = a - dist
+            dist = Z[i].T @ Z[j]
+            eta = a + b*dist
             if j in G.neighbors(i):
                 total += eta * 1  + (-np.logaddexp(0, eta))
             elif j != i:
                 total += (-np.logaddexp(0, eta))
     return total
 
-def grad_loglikelihood(G,Z,a):
+def grad_loglikelihood(G,Z,a,b):
     grad_Z = np.zeros_like(Z)
     grad_a = 0.0
+    grad_b = 0.0
     for i in G.nodes():
         for j in G.nodes():
             if j != i:
                 y = 1.0 if j in G.neighbors(i) else 0.0
-                dist = 0.5 * np.linalg.norm(Z[i] - Z[j])**2
-                eta = a - dist
-                grad_Z[i,:] +=  (Z[i] - Z[j]) * (expit(eta) - y)
-                grad_a += (-1) * (1) * (expit(eta) - y) 
-    return grad_Z, grad_a
+                dist = Z[i].T @ Z[j] 
+                eta = a + b*dist
+                grad_Z[i,:] +=  (y-expit(eta)) *  (b*Z[j])
+                grad_a += (y-expit(eta)) * (1) 
+                grad_b += (y-expit(eta)) * (dist) 
+    return grad_Z, grad_a, grad_b
 
+def update_Z(Z, grad_Z):
+    for i in range(len(Z)):
+        proj_orth = grad_Z[i]-np.dot(Z[i], grad_Z[i]) * Z[i]
+        Z[i] = Z[i] + proj_orth 
+        Z[i] = Z[i] / np.linalg.norm(Z[i])
+    return Z
 #############################################################################
 #############################################################################
 #############################################################################
 
 # Searching MLE
 
-def SearchingMLE(G, Z_init, a_init, max_iter=1000, tol=1e-4, alpha_init=0.1, rho=0.5, c=1e-4):
+def SearchingMLE(G, Z_init, a_init, b_init, max_iter=1000, tol=1e-10, alpha_init=0.1, rho=0.5, c=1e-4):
     Z0 = Z_init
     historyZ = [Z0]
 
     a0 = a_init
     historya = [a0]
+
+    b0 = b_init
+    historyb = [b0]
     
     for i in range(max_iter):
-        grad_Z,  grad_a = grad_loglikelihood(G, Z0,a0)
-        if np.linalg.norm(grad_Z) + np.abs(grad_a) < tol:
+        grad_Z,  grad_a, grad_b = grad_loglikelihood(G, Z0,a0,b0)
+        if np.linalg.norm(grad_Z) + np.abs(grad_a) + np.abs(grad_b) < tol:
             break  # Convergence criterion
         
         alpha = alpha_init
         
         # Line search using the Armijo condition
-        while loglikelihood(G, Z0 + alpha * grad_Z,a0 + alpha*grad_a) < loglikelihood(G, Z0,a0)+ c * alpha * (np.trace(np.transpose(grad_Z) @ Z0) + grad_a * a0):
+        while loglikelihood(G, update_Z(Z0, alpha*grad_Z) ,a0 + alpha*grad_a,b0 + alpha*grad_b) < loglikelihood(G, Z0,a0,b0)+ c * alpha * (np.trace(np.transpose(grad_Z) @ Z0) + grad_a * a0 + grad_b * b0):
             alpha *= rho
-            if alpha < 1e-9:
+            if alpha < 1e-4:
                 alpha = 0.0
                 break
         
         # Update step
-        Z0 = Z0 + alpha * grad_Z  
+        Z0 = update_Z(Z0, alpha*grad_Z) 
         a0 = a0 + alpha * grad_a
+        b0 = b0 + alpha * grad_b
         
         historyZ.append(Z0)
         historya.append(a0)
+        historyb.append(b0)
 
-        if alpha * np.linalg.norm(grad_Z) < tol and alpha * np.abs(grad_a) < tol:
-            break
+        #if alpha * np.linalg.norm(grad_Z) < tol and alpha * np.abs(grad_a) < tol:
+        #    break
     
-    return  Z0, a0, historyZ, historya
+    return  Z0, a0, b0, historyZ, historya, historyb
 
 #############################################################################
 #############################################################################
@@ -85,74 +98,63 @@ def SearchingMLE(G, Z_init, a_init, max_iter=1000, tol=1e-4, alpha_init=0.1, rho
 
 # Prior distribution
 
-def logpriori(G,Z,a,var=10):
-    n = len(G.nodes)
-    return (-1) * (np.log((2*np.pi*var)**((n+1)/2)) + 0.5 * np.sum(Z**2)/var + 0.5 * a**2 / var)
+def logpriori(G,Z,a,b,var=1.0):
+    n = len(G.nodes())
+    logpriorZ = 0.0
+    for i in range(len(Z)):
+        logpriorZ +=  -(Z[i].T @ Z[i] -1)**2
+    logpriora = 0.5 * a**2 / var
+    logpriorb = 0.5 * (b-1)**2 / var
+    return (-1) * (np.log((2*np.pi*var)**((n+1)/2)) + logpriorZ + logpriora + logpriorb)
 
-def grad_logpriori(G,Z,a,var=10):
+
+def grad_logpriori(G, Z,a,b,var=0.1):
     grad_Z = np.zeros_like(Z)
     for i in G.nodes():
-        grad_Z[i,:] = (-1) * Z[i,:] / var
+        grad_Z[i,:] = - Z[i] * (Z[i].T @ Z[i] -1) 
     grad_a = (-1) * a / var  
-    return grad_Z, grad_a
-
+    grad_b = (-1) * (b-1) / var  
+    return grad_Z, grad_a, grad_b
 #############################################################################
 #############################################################################
 #############################################################################
 
 # Potential energy function and its gradient
 
-def U(G,Z,a,var=1):
-    return (-1) * (loglikelihood(G,Z,a) + logpriori(G,Z,a,var))
+def U(G, Z,a,b,var=1):
+    return (-1) * (loglikelihood(G, Z,a,b) + logpriori(G, Z,a,b,var))
 
-def grad_U(G,Z,a,var=1):
-    grad_Z_likelihood, grad_a_likelihood = grad_loglikelihood(G,Z,a)
-    grad_Z_priori, grad_a_priori = grad_logpriori(G,Z,a,var)
-    grad_Z = grad_Z_likelihood + grad_Z_priori
+def grad_U(G, Z,a,b,var=0.1):
+    grad_Z_likelihood, grad_a_likelihood, grad_b_likelihood = grad_loglikelihood(G, Z,a,b)
+    grad_Z_priori, grad_a_priori, grad_b_priori = grad_logpriori(G, Z,a,b,var)
+    grad_Z = grad_Z_likelihood + grad_Z_priori 
     grad_a = grad_a_likelihood + grad_a_priori
-    return -grad_Z, -grad_a
+    grad_b = grad_b_likelihood + grad_b_priori
+    return -grad_Z, -grad_a, -grad_b
 
-
-
-def grad_loglikelihood(G,Z,a):
-    grad_Z = np.zeros_like(Z)
+def grad_U_a(G,Z,a,b,var=1.0):
     grad_a = 0.0
     for i in G.nodes():
         for j in G.nodes():
             if j != i:
                 y = 1.0 if j in G.neighbors(i) else 0.0
-                dist = 0.5 * np.linalg.norm(Z[i] - Z[j])**2
-                eta = a - dist
-                grad_Z[i,:] +=  (Z[i] - Z[j]) * (expit(eta) - y)
-                grad_a += (-1) * (1) * (expit(eta) - y) 
-    return grad_Z, grad_a
-
-
-def grad_U_i(G,Z,a,i,var=1):
-    grad_Z_i = np.zeros(Z.shape[1])
-    grad_a = 0.0
-    for j in G.nodes():
-        if j != i:
-            y = 1.0 if j in G.neighbors(i) else 0.0
-            dist = 0.5 * np.linalg.norm(Z[i] - Z[j])**2
-            eta = a - dist
-            grad_Z_i +=  (Z[i] - Z[j]) * (expit(eta) - y)
-            grad_a += (-1) * (1) * (expit(eta) - y) 
-    grad_Z_i += (-1) * Z[i,:] / var
-    return -grad_Z_i
-
-
-def grad_U_a(G,Z,a,var=1):
-    grad_a = 0.0
-    for i in G.nodes():
-        for j in G.nodes():
-            if j != i:
-                y = 1.0 if j in G.neighbors(i) else 0.0
-                dist = 0.5 * np.linalg.norm(Z[i] - Z[j])**2
-                eta = a - dist
-                grad_a += (-1) * (1) * (expit(eta) - y) 
+                dist = Z[i].T @ Z[j]
+                eta = a + b*dist
+                grad_a += (y-expit(eta))
     grad_a += (-1) * a / var 
     return -grad_a
+
+def grad_U_b(G,Z,a,b,var=1.0):
+    grad_b = 0.0
+    for i in G.nodes():
+        for j in G.nodes():
+            if j != i:
+                y = 1.0 if j in G.neighbors(i) else 0.0
+                dist = Z[i].T @ Z[j]
+                eta = a + b*dist
+                grad_b += (y-expit(eta)) * (dist)
+    grad_b += (-1) * b / var 
+    return -grad_b
 
 #############################################################################
 #############################################################################
@@ -161,21 +163,49 @@ def grad_U_a(G,Z,a,var=1):
 # Applying Hamiltonian Monte Carlo Algorithm
 
 
-def compute_Z_star(Z, Z0):
-    """ Computes Z* = Z0 Z^T (Z Z0^T Z0 Z^T)^(-1/2) Z using SVD """
-    A = Z @ Z0.T @ Z0 @ Z.T  # Compute A = Z Z0^T Z0 Z^T
+def project_to_tangent_space(theta, phi):
+    return phi - np.dot(phi, theta) * theta
+def geodesic_flow(theta, phi, step_size):
+    alpha = np.linalg.norm(phi)
+    if alpha > 1e-10:
+        new_theta = theta * np.cos(alpha * step_size) + (phi / alpha) * np.sin(alpha * step_size)
+        new_phi = phi * np.cos(alpha * step_size) - alpha * theta * np.sin(alpha * step_size)
+    else:
+        new_theta, new_phi = theta, phi  
+    return new_theta, new_phi
+def compute_starS1(Old, Ref):
+    ang_old = np.arctan2(Old[:,1], Old[:,0])
+    ang_ref = np.arctan2(Ref[:,1], Ref[:,0])
     
-    # Compute A^(-1/2) using SVD
-    U, S, _ = np.linalg.svd(A)
-    S_inv_sqrt = np.diag(1.0 / np.sqrt(S))
-    A_inv_sqrt = U @ S_inv_sqrt @ U.T
-    Z_star =  Z0 @ Z.T @ A_inv_sqrt @ Z
-    # Compute Z*
-    return Z_star - np.mean(Z_star, axis=0)
+    addition = np.mean(ang_ref-ang_old)
+    
+    ang_new = ang_old + addition
+    New = np.zeros_like(Old)
+    New[:,0] = np.cos(ang_new)
+    New[:,1] = np.sin(ang_new)
+    return New 
 
 
+def compute_starS2(Old, Ref):
+    inclination_ang_old = np.arctan2(Old[:,1], Old[:,0])
+    azimutal_ang_old = np.arccos(Old[:,2])
+    inclination_ang_ref = np.arctan2(Ref[:,1], Ref[:,0])
+    azimutal_ang_ref = np.arccos(Ref[:,2])
+    
+    
+    addition_inclination = np.mean(inclination_ang_ref - inclination_ang_old)
+    addition_inclination = np.mean(azimutal_ang_ref - azimutal_ang_old)
+    
+    inclination_ang_new = inclination_ang_old + addition_inclination
+    azimutal_ang_new = azimutal_ang_old + addition_inclination
+    New = np.zeros_like(Old)
+    New[:,0] = np.cos(azimutal_ang_new) * np.sin(inclination_ang_new)
+    New[:,1] = np.sin(azimutal_ang_new) * np.sin(inclination_ang_new)
+    New[:,2] = np.cos(inclination_ang_new)
+    return New 
 
-def hmc(G, Z_init, a_init, num_samples, epsilon_init=0.05, std_dev=1.0, percentage_warmup=0.2, Z0=None):
+
+def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init=0.2, std_dev_init_a = 0.3, std_dev_init_b = 0.2, percentage_warmup=0.2):
     """
     Hamiltonian Monte Carlo (HMC) sampling algorithm.
     Parameters:
@@ -184,7 +214,7 @@ def hmc(G, Z_init, a_init, num_samples, epsilon_init=0.05, std_dev=1.0, percenta
     - a_init: Initial value for a.
     - num_samples: Number of samples to generate.
     - epsilon_init: Initial step size for the leapfrog integrator.
-    - std_dev: Standard deviation for the momentum variable.
+    - std_dev_init: Standard deviation for the momentum variable.
     - percentage_warmup: Percentage of samples to use for warmup.
     Returns:
     - samples_Z: Generated samples for Z.
@@ -194,8 +224,8 @@ def hmc(G, Z_init, a_init, num_samples, epsilon_init=0.05, std_dev=1.0, percenta
     - acep_rate_history: Acceptance rate history.
     """
 
-    
-    number_of_parameters = Z_init.shape[0] + 1
+    n = len(G.nodes())
+    number_of_parameters = Z_init.shape[0] + 2
     warmup = int(num_samples * percentage_warmup)
     number_of_iterations = num_samples + warmup
     print(f"Number of samples: {num_samples}")
@@ -206,134 +236,179 @@ def hmc(G, Z_init, a_init, num_samples, epsilon_init=0.05, std_dev=1.0, percenta
 
     samples_Z = [Z_init]
     samples_a = [a_init]
-    Hamiltonian_p = [U(G,Z_init,a_init)]
-    LogL = [loglikelihood(G,Z_init,a_init)]
-
-    acep_rate_history = np.zeros(number_of_iterations)
-    
-
-    Z = Z_init.copy()
-    a = a_init.copy()
-
+    samples_b = [b_init]
+    Hamiltonian_p = [U(G,Z_init,a_init,b_init)]
+    LogL = [loglikelihood(G,Z_init,a_init,b_init)]
     # Parámetros adaptativos
     epsilon = epsilon_init
+    std_dev = std_dev_init
+    std_dev_a = std_dev_init_a
+    std_dev_b = std_dev_init_b
     L = max(1, int(round(1/epsilon)))  # L = 1/ε
     accept_count = 0
     total_updates = 0
 
+    acep_rate_history = np.zeros(number_of_iterations)
     
     for iter in tqdm(range(number_of_iterations)):
+
+        Z = samples_Z[-1].copy()
+        a = samples_a[-1].copy()
+        b = samples_b[-1].copy()
+
 
         # Tunning algorithm parameters
         adapting = iter < warmup
         if adapting and iter > 0:
             current_accept_rate = accept_count / total_updates if total_updates > 0 else 0
-            if current_accept_rate < 0.80:
-                epsilon = np.max(np.array([0.01,0.99*epsilon])) 
+            if current_accept_rate < 0.90:
+                epsilon = np.max(np.array([0.025,0.99*epsilon])) 
                 std_dev = np.max(np.array([0.05,0.99*std_dev]))
+                std_dev_a = np.max(np.array([0.25,0.99*std_dev_a]))
+                std_dev_b = np.max(np.array([0.15,0.99*std_dev_b]))
             elif current_accept_rate > 0.60:
                 epsilon = np.min(np.array([0.2,1.01*epsilon]))
-                std_dev = np.min(np.array([1.75,1.01*std_dev]))
-            L = max(1, int(round(1/epsilon))) 
+                std_dev = np.min(np.array([0.75,1.01*std_dev]))
+                std_dev_a = np.min(np.array([2.0,1.01*std_dev_a]))
+                std_dev_b = np.min(np.array([2.0,1.01*std_dev_b]))
+            L = max(1, int(round(1/epsilon)))  
         elif iter == warmup:
-            print(f"Final parameters: epsilon={epsilon:.4f}, L={L}, std_dev={std_dev:.4f}")
+            print(f"Final parameters: epsilon={epsilon:.4f}, L={L}, std_dev={std_dev:.4f}, std_dev_a={std_dev_a:.4f}, std_dev_b={std_dev_b:.4f}")
 
 
 
-        _,  grad_a = grad_U(G,samples_Z[-1],samples_a[-1])
+        
 
 
-        ### HMC algorithm for Z
+        ### GHMC algorithm for Z
 
         for i in range(Z.shape[0]):
-            Z_current = Z.copy()
             Z_i = Z[i].copy()
-            grad_Z_i = grad_U_i(G,Z_current, samples_a[-1], i)
-
-
             p_i = np.random.normal(0, std_dev, size=Z_i.shape)
+            p_i = project_to_tangent_space(Z_i, p_i)
             current_p = p_i.copy()
 
-            # Leapfrog integration
-            p_i -= epsilon * grad_Z_i / 2
+            #Leapfrog integration
+            grad_Z,  grad_a, grad_b = grad_U(G, Z,samples_a[-1],samples_b[-1])
+            grad_Z_i = grad_Z[i].copy()
+            Z_i = Z[i].copy()
+            p_i -= epsilon * grad_Z_i / 2 
+            p_i = project_to_tangent_space(Z_i, p_i)       
             for _ in range(L):
-                Z_i += epsilon * p_i / std_dev**2
-                Z_temp = Z_current.copy()
-                Z_temp[i] = Z_i  
-                grad_Z_i = grad_U_i(G,Z_temp, samples_a[-1], i)
-                p_i -= epsilon * grad_Z_i
+                Z_i, p_i = geodesic_flow(Z_i, p_i, epsilon)
+            Z[i] = Z_i.copy()
+            grad_Z,  grad_a, grad_b = grad_U(G, Z,samples_a[-1],samples_b[-1])
+            grad_Z_i = grad_Z[i].copy()
             p_i -= epsilon * grad_Z_i / 2
-  
+            p_i = project_to_tangent_space(Z_i, p_i)
+
+            
+
             # Hamiltonian
-            Z_proposed = Z_current.copy()
-            Z_proposed[i] = Z_i
-            current_U = U(G,Z_current, samples_a[-1])
-            proposed_U = U(G,Z_proposed, samples_a[-1])
-            current_K = 0.5 * np.sum(current_p**2) / std_dev**2
-            proposed_K = 0.5 * np.sum(p_i**2) / std_dev**2
+            current_U = U(G, samples_Z[-1],samples_a[-1],samples_b[-1])
+            current_K = 0.5 * np.sum(current_p**2)
             current_H = current_U + current_K
+            proposed_U = U(G, Z,samples_a[-1],samples_b[-1])
+            proposed_K = 0.5 * np.sum(p_i**2)
             proposed_H = proposed_U + proposed_K
             # Metropolis-Hastings acceptance rate
             log_accept_ratio = current_H - proposed_H
-
             if np.log(np.random.rand()) < log_accept_ratio:
-                Z[i] = Z_i 
+                samples_a.append(samples_a[-1])
+                samples_b.append(samples_b[-1])
+                samples_Z.append(Z.copy())
                 accept_count += 1
-                samples_Z.append(compute_Z_star(Z.copy(), Z0)) 
-                samples_a.append(samples_a[-1])
                 Hamiltonian_p.append(proposed_H)
-                LogL.append(loglikelihood(G,Z, samples_a[-1]))
+                LogL.append(loglikelihood(G, Z,samples_a[-1],samples_b[-1]))
             else:
-                samples_Z.append(samples_Z[-1])
                 samples_a.append(samples_a[-1])
+                samples_b.append(samples_b[-1])
+                samples_Z.append(samples_Z[-1])
                 Hamiltonian_p.append(current_H)
                 LogL.append(LogL[-1])
+            total_updates += 1   
 
-            total_updates += 1
-            _,  grad_a = grad_U(G,samples_Z[-1],samples_a[-1])
+            grad_Z,  grad_a, grad_b = grad_U(G, samples_Z[-1],samples_a[-1],samples_b[-1])
+
+        
 
         ### HMC algorithm for a
-        p = np.random.normal(0, std_dev, size=1)
+        p = np.random.normal(0, std_dev_a, size=1)
         #Leapfrog integration
         p -= epsilon * grad_a / 2        
         for _ in range(L):
-            a += epsilon * p / std_dev**2
-            grad_a = grad_U_a(G,samples_Z[-1],a)
+            a += epsilon * p / std_dev_a**2
+            grad_a = grad_U_a(G,samples_Z[-1],a,samples_b[-1])
             p -= epsilon * grad_a
         p -= epsilon * grad_a / 2
         # Hamiltonian
         current_H = Hamiltonian_p[-1]
-        proposed_U = U(G,samples_Z[-1],a)
-        proposed_K = np.sum(p**2) / std_dev**2
+        proposed_U = U(G,samples_Z[-1],a,samples_b[-1])
+        proposed_K = np.sum(p**2) / std_dev_a**2
         proposed_H = proposed_U + proposed_K
         
         # Metropolis-Hastings acceptance rate
         log_accept_ratio = current_H - proposed_H
         if np.log(np.random.rand()) < log_accept_ratio:
             samples_a.append(a.copy())
+            samples_b.append(samples_b[-1])
             samples_Z.append(samples_Z[-1])
             accept_count += 1
             Hamiltonian_p.append(proposed_H)
-            LogL.append(loglikelihood(G,samples_Z[-1],a))
+            LogL.append(loglikelihood(G,samples_Z[-1],a,samples_b[-1]))
         else:
             samples_a.append(samples_a[-1])
+            samples_b.append(samples_b[-1])
             samples_Z.append(samples_Z[-1])
             Hamiltonian_p.append(current_H)
             LogL.append(LogL[-1])
-        total_updates += 1    
+        total_updates += 1 
+
+        ### HMC algorithm for b
+        p = np.random.normal(0, std_dev_b, size=1)
+        #Leapfrog integration
+        p -= epsilon * grad_b / 2        
+        for _ in range(L):
+            b += epsilon * p / std_dev_b**2
+            grad_b = grad_U_b(G,samples_Z[-1],samples_a[-1],b)
+            p -= epsilon * grad_b
+        p -= epsilon * grad_b / 2
+        # Hamiltonian
+        current_H = Hamiltonian_p[-1]
+        proposed_U = U(G,samples_Z[-1],samples_a[-1],b)
+        proposed_K = np.sum(p**2) / std_dev_b**2
+        proposed_H = proposed_U + proposed_K
+        
+        # Metropolis-Hastings acceptance rate
+        log_accept_ratio = current_H - proposed_H
+        if np.log(np.random.rand()) < log_accept_ratio:
+            samples_a.append(samples_a[-1])
+            samples_b.append(b.copy())
+            samples_Z.append(samples_Z[-1])
+            accept_count += 1
+            Hamiltonian_p.append(proposed_H)
+            LogL.append(loglikelihood(G,samples_Z[-1],samples_a[-1],b))
+        else:
+            samples_a.append(samples_a[-1])
+            samples_b.append(samples_b[-1])
+            samples_Z.append(samples_Z[-1])
+            Hamiltonian_p.append(current_H)
+            LogL.append(LogL[-1])
+        total_updates += 1     
 
 
         acep_rate_history[iter] = accept_count / total_updates if total_updates > 0 else 0
-
+    
     aceptance_rate = accept_count / total_updates
     print(f"Acceptance rate: {aceptance_rate:.5f}")
-
+    
     # Choose valid samples
     ## Remove warmup samples
     samples_Z = np.array(samples_Z[1:])[warmup*number_of_parameters:-1:number_of_parameters,:,:]
     samples_a = np.array([np.float64(s.item()) if isinstance(s, np.ndarray) else np.float64(s) for s in samples_a[1:]])[warmup*number_of_parameters:-1:number_of_parameters]
+    samples_b = np.array([np.float64(s.item()) if isinstance(s, np.ndarray) else np.float64(s) for s in samples_b[1:]])[warmup*number_of_parameters:-1:number_of_parameters]
     Hamiltonian_p = np.array([np.float64(s.item()) if isinstance(s, np.ndarray) else np.float64(s) for s in Hamiltonian_p[1:]])[warmup*number_of_parameters:-1:number_of_parameters]
     LogL = np.array([np.float64(s.item()) if isinstance(s, np.ndarray) else np.float64(s) for s in LogL[1:]])[warmup*number_of_parameters:-1:number_of_parameters]
 
+    return samples_Z, samples_a, samples_b, Hamiltonian_p, LogL, acep_rate_history
 
-    return samples_Z, samples_a, Hamiltonian_p, LogL, acep_rate_history
