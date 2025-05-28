@@ -205,7 +205,7 @@ def compute_starS2(Old, Ref):
     return New 
 
 
-def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init=0.2, std_dev_init_a = 0.3, std_dev_init_b = 0.2, percentage_warmup=0.2):
+def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init=0.2, std_dev_init_a = 0.4, std_dev_init_b = 0.2, percentage_warmup=0.2):
     """
     Hamiltonian Monte Carlo (HMC) sampling algorithm.
     Parameters:
@@ -262,15 +262,15 @@ def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init
         if adapting and iter > 0:
             current_accept_rate = accept_count / total_updates if total_updates > 0 else 0
             if current_accept_rate < 0.90:
-                epsilon = np.max(np.array([0.025,0.99*epsilon])) 
+                epsilon = np.max(np.array([0.010,0.99*epsilon])) 
                 std_dev = np.max(np.array([0.05,0.99*std_dev]))
-                std_dev_a = np.max(np.array([0.25,0.99*std_dev_a]))
-                std_dev_b = np.max(np.array([0.15,0.99*std_dev_b]))
+                #std_dev_a = np.max(np.array([0.10,0.99*std_dev_a]))
+                #std_dev_b = np.max(np.array([0.10,0.99*std_dev_b]))
             elif current_accept_rate > 0.60:
                 epsilon = np.min(np.array([0.2,1.01*epsilon]))
                 std_dev = np.min(np.array([0.75,1.01*std_dev]))
-                std_dev_a = np.min(np.array([2.0,1.01*std_dev_a]))
-                std_dev_b = np.min(np.array([2.0,1.01*std_dev_b]))
+                #std_dev_a = np.min(np.array([2.0,1.01*std_dev_a]))
+                #std_dev_b = np.min(np.array([2.0,1.01*std_dev_b]))
             L = max(1, int(round(1/epsilon)))  
         elif iter == warmup:
             print(f"Final parameters: epsilon={epsilon:.4f}, L={L}, std_dev={std_dev:.4f}, std_dev_a={std_dev_a:.4f}, std_dev_b={std_dev_b:.4f}")
