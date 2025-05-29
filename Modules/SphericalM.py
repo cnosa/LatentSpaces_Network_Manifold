@@ -102,19 +102,20 @@ def logpriori(G,Z,a,b,var=1.0):
     n = len(G.nodes())
     logpriorZ = 0.0
     for i in range(len(Z)):
-        logpriorZ +=  -(Z[i].T @ Z[i] -1)**2
-    logpriora = 0.5 * a**2 / var
-    logpriorb = 0.5 * (b-1)**2 / var
-    return (-1) * (np.log((2*np.pi*var)**((n+1)/2)) + logpriorZ + logpriora + logpriorb)
+        logpriorZ += - (1.0 - Z[i].T @ Z[i])**2 / var
+    logpriora = - 0.5 * a**2 / var
+    logpriorb = - 0.5 * (b-1)**2 / var
+    return np.log((2*np.pi*var)**((n+1)/2)) + logpriorZ + logpriora + logpriorb
 
 
 def grad_logpriori(G, Z,a,b,var=0.1):
     grad_Z = np.zeros_like(Z)
     for i in G.nodes():
-        grad_Z[i,:] = - Z[i] * (Z[i].T @ Z[i] -1) 
+        grad_Z[i,:] = (-1) * Z[i] * (1.0 - Z[i].T @ Z[i])
     grad_a = (-1) * a / var  
     grad_b = (-1) * (b-1) / var  
     return grad_Z, grad_a, grad_b
+
 #############################################################################
 #############################################################################
 #############################################################################
