@@ -133,6 +133,18 @@ def grad_U(G, Z,a,b,var=0.1):
     grad_b = grad_b_likelihood + grad_b_priori
     return -grad_Z, -grad_a, -grad_b
 
+def grad_U_i(G,Z,a,b,i):
+    var_z = 0.01
+    grad_Z_i = np.zeros(Z.shape[1])
+    for j in G.nodes():
+        if j != i:
+            y = 1.0 if j in G.neighbors(i) else 0.0
+            dist = Z[i].T @ Z[j] 
+            eta = a + b*dist
+            grad_Z_i +=  (y-expit(eta)) *  (b*Z[j])
+    grad_Z_i += (-1) * Z[i] * (1.0 - Z[i].T @ Z[i]) / var_z
+    return -grad_Z_i
+
 def grad_U_a(G,Z,a,b,var=1.0):
     grad_a = 0.0
     for i in G.nodes():
@@ -262,14 +274,14 @@ def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init
         adapting = iter < warmup
         if adapting and iter > 0:
             current_accept_rate = accept_count / total_updates if total_updates > 0 else 0
-            if current_accept_rate < 0.90:
+            if current_accept_rate < 0.80:
                 epsilon = np.max(np.array([0.010,0.99*epsilon])) 
-                std_dev = np.max(np.array([0.05,0.99*std_dev]))
+                #std_dev = np.max(np.array([0.05,0.99*std_dev]))
                 #std_dev_a = np.max(np.array([0.10,0.99*std_dev_a]))
                 #std_dev_b = np.max(np.array([0.10,0.99*std_dev_b]))
             elif current_accept_rate > 0.60:
                 epsilon = np.min(np.array([0.2,1.01*epsilon]))
-                std_dev = np.min(np.array([0.75,1.01*std_dev]))
+                #std_dev = np.min(np.array([0.75,1.01*std_dev]))
                 #std_dev_a = np.min(np.array([2.0,1.01*std_dev_a]))
                 #std_dev_b = np.min(np.array([2.0,1.01*std_dev_b]))
             L = max(1, int(round(1/epsilon)))  
@@ -290,16 +302,14 @@ def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init
             current_p = p_i.copy()
 
             #Leapfrog integration
-            grad_Z,  grad_a, grad_b = grad_U(G, Z,samples_a[-1],samples_b[-1])
-            grad_Z_i = grad_Z[i].copy()
+            grad_Z_i = grad_U_i(G,Z, samples_a[-1], samples_b[-1], i)
             Z_i = Z[i].copy()
             p_i -= epsilon * grad_Z_i / 2 
             p_i = project_to_tangent_space(Z_i, p_i)       
             for _ in range(L):
                 Z_i, p_i = geodesic_flow(Z_i, p_i, epsilon)
             Z[i] = Z_i.copy()
-            grad_Z,  grad_a, grad_b = grad_U(G, Z,samples_a[-1],samples_b[-1])
-            grad_Z_i = grad_Z[i].copy()
+            grad_Z_i = grad_U_i(G,Z, samples_a[-1], samples_b[-1], i)
             p_i -= epsilon * grad_Z_i / 2
             p_i = project_to_tangent_space(Z_i, p_i)
 
@@ -329,13 +339,13 @@ def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init
                 LogL.append(LogL[-1])
             total_updates += 1   
 
-            grad_Z,  grad_a, grad_b = grad_U(G, samples_Z[-1],samples_a[-1],samples_b[-1])
 
         
 
         ### HMC algorithm for a
         p = np.random.normal(0, std_dev_a, size=1)
         #Leapfrog integration
+        grad_a = grad_U_a(G,samples_Z[-1],a,samples_b[-1])
         p -= epsilon * grad_a / 2        
         for _ in range(L):
             a += epsilon * p / std_dev_a**2
@@ -366,6 +376,7 @@ def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init
         total_updates += 1 
 
         ### HMC algorithm for b
+        grad_b = grad_U_b(G,samples_Z[-1],samples_a[-1],b)
         p = np.random.normal(0, std_dev_b, size=1)
         #Leapfrog integration
         p -= epsilon * grad_b / 2        
