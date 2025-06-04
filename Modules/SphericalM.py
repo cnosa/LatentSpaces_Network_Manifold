@@ -218,7 +218,7 @@ def compute_starS2(Old, Ref):
     return New 
 
 
-def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init=0.2, std_dev_init_a = 0.4, std_dev_init_b = 0.2, percentage_warmup=0.2):
+def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init_Z=0.2, std_dev_init_a = 0.4, std_dev_init_b = 0.2, percentage_warmup=0.2):
     """
     Hamiltonian Monte Carlo (HMC) sampling algorithm.
     Parameters:
@@ -254,7 +254,7 @@ def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init
     LogL = [loglikelihood(G,Z_init,a_init,b_init)]
     # Parámetros adaptativos
     epsilon = epsilon_init
-    std_dev = std_dev_init
+    std_dev_Z = std_dev_init_Z
     std_dev_a = std_dev_init_a
     std_dev_b = std_dev_init_b
     L = max(1, int(round(1/epsilon)))  # L = 1/ε
@@ -275,18 +275,14 @@ def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init
         if adapting and iter > 0:
             current_accept_rate = accept_count / total_updates if total_updates > 0 else 0
             if current_accept_rate < 0.80:
-                epsilon = np.max(np.array([0.010,0.99*epsilon])) 
-                #std_dev = np.max(np.array([0.05,0.99*std_dev]))
-                #std_dev_a = np.max(np.array([0.10,0.99*std_dev_a]))
-                #std_dev_b = np.max(np.array([0.10,0.99*std_dev_b]))
+                #epsilon = np.max(np.array([0.010,0.99*epsilon])) 
+                std_dev_Z = np.max(np.array([0.025,0.99*std_dev_Z]))
             elif current_accept_rate > 0.60:
-                epsilon = np.min(np.array([0.2,1.01*epsilon]))
-                #std_dev = np.min(np.array([0.75,1.01*std_dev]))
-                #std_dev_a = np.min(np.array([2.0,1.01*std_dev_a]))
-                #std_dev_b = np.min(np.array([2.0,1.01*std_dev_b]))
+                #epsilon = np.min(np.array([0.2,1.01*epsilon]))
+                std_dev_Z = np.min(np.array([0.75,1.01*std_dev_Z]))
             L = max(1, int(round(1/epsilon)))  
         elif iter == warmup:
-            print(f"Final parameters: epsilon={epsilon:.4f}, L={L}, std_dev={std_dev:.4f}, std_dev_a={std_dev_a:.4f}, std_dev_b={std_dev_b:.4f}")
+            print(f"Final parameters: epsilon={epsilon:.4f}, L={L}, std_dev_Z={std_dev_Z:.4f}, std_dev_a={std_dev_a:.4f}, std_dev_b={std_dev_b:.4f}")
 
 
 
@@ -297,7 +293,7 @@ def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init
 
         for i in range(Z.shape[0]):
             Z_i = Z[i].copy()
-            p_i = np.random.normal(0, std_dev, size=Z_i.shape)
+            p_i = np.random.normal(0, std_dev_Z, size=Z_i.shape)
             p_i = project_to_tangent_space(Z_i, p_i)
             current_p = p_i.copy()
 
@@ -421,6 +417,46 @@ def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init
     samples_b = np.array([np.float64(s.item()) if isinstance(s, np.ndarray) else np.float64(s) for s in samples_b[1:]])[warmup*number_of_parameters:-1:number_of_parameters]
     Hamiltonian_p = np.array([np.float64(s.item()) if isinstance(s, np.ndarray) else np.float64(s) for s in Hamiltonian_p[1:]])[warmup*number_of_parameters:-1:number_of_parameters]
     LogL = np.array([np.float64(s.item()) if isinstance(s, np.ndarray) else np.float64(s) for s in LogL[1:]])[warmup*number_of_parameters:-1:number_of_parameters]
+    acep_rate_history = np.array(acep_rate_history)[warmup:]
 
     return samples_Z, samples_a, samples_b, Hamiltonian_p, LogL, acep_rate_history
 
+#############################################################################
+#############################################################################
+#############################################################################
+
+# Saving results
+
+
+def saving_results(samples, Hamiltonian_p, LogL, acep_rate_history, filename="results.xlsx"):
+    samples_Z = samples[0]
+    samples_a = samples[1]
+    samples_b = samples[2] if len(samples) > 2 else None
+
+    with pd.ExcelWriter(filename, engine="openpyxl") as writer:
+        print("Saving samples...")
+
+        reshaped_Z = samples_Z.reshape(samples_Z.shape[0] * samples_Z.shape[1], samples_Z.shape[2])
+        df_Z = pd.DataFrame(reshaped_Z)
+        df_Z.to_excel(writer, sheet_name="samples_Z", index=False)
+
+        # samples_a
+        df_a = pd.DataFrame(samples_a, columns=["a"])
+        df_a.to_excel(writer, sheet_name="samples_a", index=False)
+
+        # samples_b 
+        if samples_b is not None:
+            samples_b = np.array(samples_b)
+            if samples_b.ndim == 1:
+                df_b = pd.DataFrame(samples_b, columns=["b"])
+            else:
+                df_b = pd.DataFrame(samples_b)
+            df_b.to_excel(writer, sheet_name="samples_b", index=False)
+
+        print("Saving diagnostics...")
+
+        pd.DataFrame(Hamiltonian_p, columns=["Hamiltonian"]).to_excel(writer, sheet_name="Hamiltonian", index=False)
+        pd.DataFrame(LogL, columns=["LogLikelihood"]).to_excel(writer, sheet_name="LogL", index=False)
+        pd.DataFrame(acep_rate_history, columns=["AcceptanceRate"]).to_excel(writer, sheet_name="AcceptanceRate", index=False)
+
+    print(f"Results saved to {filename}")

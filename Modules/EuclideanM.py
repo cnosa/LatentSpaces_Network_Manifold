@@ -175,7 +175,7 @@ def compute_Z_star(Z, Z0):
 
 
 
-def hmc(G, Z_init, a_init, num_samples, epsilon_init=0.05, std_dev=1.0, percentage_warmup=0.2, Z0=None):
+def hmc(G, Z_init, a_init, num_samples, epsilon_init=0.05, std_dev_Z=1.0, std_dev_a=1.0, percentage_warmup=0.2, Z0=None):
     """
     Hamiltonian Monte Carlo (HMC) sampling algorithm.
     Parameters:
@@ -230,13 +230,13 @@ def hmc(G, Z_init, a_init, num_samples, epsilon_init=0.05, std_dev=1.0, percenta
             current_accept_rate = accept_count / total_updates if total_updates > 0 else 0
             if current_accept_rate < 0.80:
                 epsilon = np.max(np.array([0.05,0.99*epsilon])) 
-                std_dev = np.max(np.array([0.05,0.99*std_dev]))
+                std_dev_Z = np.max(np.array([0.05,0.99*std_dev_Z]))
             elif current_accept_rate > 0.60:
                 epsilon = np.min(np.array([0.2,1.01*epsilon]))
-                std_dev = np.min(np.array([1.75,1.01*std_dev]))
+                std_dev_Z = np.min(np.array([1.75,1.01*std_dev_Z]))
             L = max(1, int(round(1/epsilon))) 
         elif iter == warmup:
-            print(f"Final parameters: epsilon={epsilon:.4f}, L={L}, std_dev={std_dev:.4f}")
+            print(f"Final parameters: epsilon={epsilon:.4f}, L={L}, std_dev_Z={std_dev_Z:.4f}")
 
 
 
@@ -251,13 +251,13 @@ def hmc(G, Z_init, a_init, num_samples, epsilon_init=0.05, std_dev=1.0, percenta
             grad_Z_i = grad_U_i(G,Z_current, samples_a[-1], i)
 
 
-            p_i = np.random.normal(0, std_dev, size=Z_i.shape)
+            p_i = np.random.normal(0, std_dev_Z, size=Z_i.shape)
             current_p = p_i.copy()
 
             # Leapfrog integration
             p_i -= epsilon * grad_Z_i / 2
             for _ in range(L):
-                Z_i += epsilon * p_i / std_dev**2
+                Z_i += epsilon * p_i / std_dev_Z**2
                 Z_temp = Z_current.copy()
                 Z_temp[i] = Z_i  
                 grad_Z_i = grad_U_i(G,Z_temp, samples_a[-1], i)
@@ -269,8 +269,8 @@ def hmc(G, Z_init, a_init, num_samples, epsilon_init=0.05, std_dev=1.0, percenta
             Z_proposed[i] = Z_i
             current_U = U(G,Z_current, samples_a[-1])
             proposed_U = U(G,Z_proposed, samples_a[-1])
-            current_K = 0.5 * np.sum(current_p**2) / std_dev**2
-            proposed_K = 0.5 * np.sum(p_i**2) / std_dev**2
+            current_K = 0.5 * np.sum(current_p**2) / std_dev_Z**2
+            proposed_K = 0.5 * np.sum(p_i**2) / std_dev_Z**2
             current_H = current_U + current_K
             proposed_H = proposed_U + proposed_K
             # Metropolis-Hastings acceptance rate
@@ -293,18 +293,18 @@ def hmc(G, Z_init, a_init, num_samples, epsilon_init=0.05, std_dev=1.0, percenta
             _,  grad_a = grad_U(G,samples_Z[-1],samples_a[-1])
 
         ### HMC algorithm for a
-        p = np.random.normal(0, std_dev, size=1)
+        p = np.random.normal(0, std_dev_a, size=1)
         #Leapfrog integration
         p -= epsilon * grad_a / 2        
         for _ in range(L):
-            a += epsilon * p / std_dev**2
+            a += epsilon * p / std_dev_a**2
             grad_a = grad_U_a(G,samples_Z[-1],a)
             p -= epsilon * grad_a
         p -= epsilon * grad_a / 2
         # Hamiltonian
         current_H = Hamiltonian_p[-1]
         proposed_U = U(G,samples_Z[-1],a)
-        proposed_K = np.sum(p**2) / std_dev**2
+        proposed_K = np.sum(p**2) / std_dev_a**2
         proposed_H = proposed_U + proposed_K
         
         # Metropolis-Hastings acceptance rate
@@ -334,6 +334,47 @@ def hmc(G, Z_init, a_init, num_samples, epsilon_init=0.05, std_dev=1.0, percenta
     samples_a = np.array([np.float64(s.item()) if isinstance(s, np.ndarray) else np.float64(s) for s in samples_a[1:]])[warmup*number_of_parameters:-1:number_of_parameters]
     Hamiltonian_p = np.array([np.float64(s.item()) if isinstance(s, np.ndarray) else np.float64(s) for s in Hamiltonian_p[1:]])[warmup*number_of_parameters:-1:number_of_parameters]
     LogL = np.array([np.float64(s.item()) if isinstance(s, np.ndarray) else np.float64(s) for s in LogL[1:]])[warmup*number_of_parameters:-1:number_of_parameters]
+    acep_rate_history = np.array(acep_rate_history)[warmup:]
 
 
     return samples_Z, samples_a, Hamiltonian_p, LogL, acep_rate_history
+
+#############################################################################
+#############################################################################
+#############################################################################
+
+# Saving results
+
+
+def saving_results(samples, Hamiltonian_p, LogL, acep_rate_history, filename="results.xlsx"):
+    samples_Z = samples[0]
+    samples_a = samples[1]
+    samples_b = samples[2] if len(samples) > 2 else None
+
+    with pd.ExcelWriter(filename, engine="openpyxl") as writer:
+        print("Saving samples...")
+
+        reshaped_Z = samples_Z.reshape(samples_Z.shape[0] * samples_Z.shape[1], samples_Z.shape[2])
+        df_Z = pd.DataFrame(reshaped_Z)
+        df_Z.to_excel(writer, sheet_name="samples_Z", index=False)
+
+        # samples_a
+        df_a = pd.DataFrame(samples_a, columns=["a"])
+        df_a.to_excel(writer, sheet_name="samples_a", index=False)
+
+        # samples_b 
+        if samples_b is not None:
+            samples_b = np.array(samples_b)
+            if samples_b.ndim == 1:
+                df_b = pd.DataFrame(samples_b, columns=["b"])
+            else:
+                df_b = pd.DataFrame(samples_b)
+            df_b.to_excel(writer, sheet_name="samples_b", index=False)
+
+        print("Saving diagnostics...")
+
+        pd.DataFrame(Hamiltonian_p, columns=["Hamiltonian"]).to_excel(writer, sheet_name="Hamiltonian", index=False)
+        pd.DataFrame(LogL, columns=["LogLikelihood"]).to_excel(writer, sheet_name="LogL", index=False)
+        pd.DataFrame(acep_rate_history, columns=["AcceptanceRate"]).to_excel(writer, sheet_name="AcceptanceRate", index=False)
+
+    print(f"Results saved to {filename}")
