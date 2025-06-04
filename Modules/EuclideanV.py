@@ -174,7 +174,7 @@ def plot_alpha(x):
     plt.show()
 
 
-def clustering2D(G,node_mapping, Z_ML, a_ML, Z_MAP, a_MAP, Z_CM, a_CM):
+def clustering2D(G,node_mapping, Z_ML, a_ML, Z_MAP, a_MAP, Z_CM, a_CM, verbose=False):
     from sklearn.cluster import SpectralClustering
     from sklearn.metrics import silhouette_score
     import matplotlib.pyplot as plt
@@ -215,13 +215,13 @@ def clustering2D(G,node_mapping, Z_ML, a_ML, Z_MAP, a_MAP, Z_CM, a_CM):
         score = silhouette_score(Z_MAP, labels)
         silhouette_scores.append(score)
 
-
-    plt.plot(cluster_range, silhouette_scores, marker='o')
-    plt.xlabel("Number of clusters (k)")
-    plt.ylabel("Silhouette score")
-    plt.title("Cluster validation using Silhouette score")
-    plt.grid(True)
-    plt.show()
+    if verbose:
+        plt.plot(cluster_range, silhouette_scores, marker='o')
+        plt.xlabel("Number of clusters (k)")
+        plt.ylabel("Silhouette score")
+        plt.title("Cluster validation using Silhouette score")
+        plt.grid(True)
+        plt.show()
 
 
     best_k = cluster_range[np.argmax(silhouette_scores)]
@@ -231,10 +231,10 @@ def clustering2D(G,node_mapping, Z_ML, a_ML, Z_MAP, a_MAP, Z_CM, a_CM):
     sc = SpectralClustering(n_clusters=best_k, affinity='nearest_neighbors', n_neighbors=5, random_state=42)
     labels = sc.fit_predict(Z_MAP)
 
-
-    plt.scatter(Z_MAP[:, 0], Z_MAP[:, 1], c=labels, cmap='viridis')
-    plt.title(f"Spectral clustering with k={best_k}")
-    plt.show()
+    if verbose:
+        plt.scatter(Z_MAP[:, 0], Z_MAP[:, 1], c=labels, cmap='viridis')
+        plt.title(f"Spectral clustering with k={best_k}")
+        plt.show()
 
     ##############################################################
     boundaries = []
@@ -245,55 +245,59 @@ def clustering2D(G,node_mapping, Z_ML, a_ML, Z_MAP, a_MAP, Z_CM, a_CM):
     Y_CM_sorted = Y_CM[np.argsort(labels), :][:, np.argsort(labels)]
     Y_MAP_sorted = Y_MAP[np.argsort(labels), :][:, np.argsort(labels)]
 
-    plt.figure(figsize=(12,12))
-    plt.subplot(2,2,1)
-    ax1 = sns.heatmap(Y[np.argsort(labels), :][:, np.argsort(labels)], annot=False, cmap="Blues", cbar=False, square=True, linewidths=0.5, linecolor='white',
-                xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
-    ax1.xaxis.set_ticks_position('top')
-    ax1.xaxis.set_label_position('top')
-    for boundary in boundaries:
-        ax1.axhline(boundary, color='black', linewidth=2)
-        ax1.axvline(boundary, color='black', linewidth=2)
+    if verbose:
+        plt.figure(figsize=(12,12))
+        plt.subplot(2,2,1)
+        ax1 = sns.heatmap(Y[np.argsort(labels), :][:, np.argsort(labels)], annot=False, cmap="Blues", cbar=False, square=True, linewidths=0.5, linecolor='white',
+                    xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
+        ax1.xaxis.set_ticks_position('top')
+        ax1.xaxis.set_label_position('top')
+        for boundary in boundaries:
+            ax1.axhline(boundary, color='black', linewidth=2)
+            ax1.axvline(boundary, color='black', linewidth=2)
 
-    plt.title("True sociomatrix matrix")
-    plt.subplot(2,2,2)
-    ax2 = sns.heatmap(Y_ML[np.argsort(labels), :][:, np.argsort(labels)], annot=False, cmap="Reds", cbar=False, square=True, linewidths=0.5, linecolor='white',
-                xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
-    ax2.xaxis.set_ticks_position('top')
-    ax2.xaxis.set_label_position('top')
-    for boundary in boundaries:
-        ax2.axhline(boundary, color='black', linewidth=2)
-        ax2.axvline(boundary, color='black', linewidth=2)
-    plt.title("ML: Estimated sociomatrix matrix")
-    plt.subplot(2,2,3)
-    ax3 = sns.heatmap(Y_CM_sorted, annot=False, cmap="Reds", cbar=False, square=True, linewidths=0.5, linecolor='white',
-                xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
-    ax3.xaxis.set_ticks_position('top')
-    ax3.xaxis.set_label_position('top')
-    for boundary in boundaries:
-        ax3.axhline(boundary, color='black', linewidth=2)
-        ax3.axvline(boundary, color='black', linewidth=2)
-    plt.title("CM: Estimated sociomatrix matrix")
-    plt.subplot(2,2,4)
-    ax4 = sns.heatmap(Y_MAP_sorted, annot=False, cmap="Reds", cbar=False, square=True, linewidths=0.5, linecolor='white',
-                xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
-    ax4.xaxis.set_ticks_position('top')
-    ax4.xaxis.set_label_position('top')
-    for boundary in boundaries:
-        ax4.axhline(boundary, color='black', linewidth=2)
-        ax4.axvline(boundary, color='black', linewidth=2)
-    plt.title("MAP: Estimated sociomatrix matrix")
-    plt.show()
+        plt.title("True sociomatrix matrix")
+        plt.subplot(2,2,2)
+        ax2 = sns.heatmap(Y_ML[np.argsort(labels), :][:, np.argsort(labels)], annot=False, cmap="Reds", cbar=False, square=True, linewidths=0.5, linecolor='white',
+                    xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
+        ax2.xaxis.set_ticks_position('top')
+        ax2.xaxis.set_label_position('top')
+        for boundary in boundaries:
+            ax2.axhline(boundary, color='black', linewidth=2)
+            ax2.axvline(boundary, color='black', linewidth=2)
+        plt.title("ML: Estimated sociomatrix matrix")
+        plt.subplot(2,2,3)
+        ax3 = sns.heatmap(Y_CM_sorted, annot=False, cmap="Reds", cbar=False, square=True, linewidths=0.5, linecolor='white',
+                    xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
+        ax3.xaxis.set_ticks_position('top')
+        ax3.xaxis.set_label_position('top')
+        for boundary in boundaries:
+            ax3.axhline(boundary, color='black', linewidth=2)
+            ax3.axvline(boundary, color='black', linewidth=2)
+        plt.title("CM: Estimated sociomatrix matrix")
+        plt.subplot(2,2,4)
+        ax4 = sns.heatmap(Y_MAP_sorted, annot=False, cmap="Reds", cbar=False, square=True, linewidths=0.5, linecolor='white',
+                    xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
+        ax4.xaxis.set_ticks_position('top')
+        ax4.xaxis.set_label_position('top')
+        for boundary in boundaries:
+            ax4.axhline(boundary, color='black', linewidth=2)
+            ax4.axvline(boundary, color='black', linewidth=2)
+        plt.title("MAP: Estimated sociomatrix matrix")
+        plt.show()
 
     ##############################################################
+    if verbose:
+        plt.figure(figsize=(6,6))
+        cmap = plt.colormaps.get_cmap('Set1')
+        nx.draw(G, nx.spring_layout(G, seed=4),with_labels=False, node_color=[cmap(label) for label in labels], edge_color='gray', node_size=800)
+        node_mapping_inv = {v: k for k, v in node_mapping.items()}
+        nx.draw_networkx_labels(G, nx.spring_layout(G, seed=4), labels=node_mapping_inv, font_size=14, font_color='black')
+        plt.title("Network")
+        plt.show()
 
-    plt.figure(figsize=(6,6))
-    cmap = plt.colormaps.get_cmap('Set1')
-    nx.draw(G, nx.spring_layout(G, seed=4),with_labels=False, node_color=[cmap(label) for label in labels], edge_color='gray', node_size=800)
-    node_mapping_inv = {v: k for k, v in node_mapping.items()}
-    nx.draw_networkx_labels(G, nx.spring_layout(G, seed=4), labels=node_mapping_inv, font_size=14, font_color='black')
-    plt.title("Network")
-    plt.show()
+    community = [[i for i, l in enumerate(labels) if l==tag] for tag in np.unique(labels)]
+    return community
 
 #############################################################################
 #############################################################################
@@ -310,7 +314,6 @@ def plot_Z_samples_3D(samples_Z):
     samples_Z = np.array(samples_Z)  # shape: (num_samples, num_points, 3)
     num_samples, num_points, _ = samples_Z.shape
 
-    # Flatten the data para hacer scatterplot
     all_points = samples_Z.reshape(-1, 3)
     point_ids = np.tile(np.arange(num_points), num_samples)
     sample_ids = np.repeat(np.arange(num_samples), num_points)
@@ -318,13 +321,9 @@ def plot_Z_samples_3D(samples_Z):
     df = pd.DataFrame(all_points, columns=["x", "y", "z"])
     df["point_id"] = point_ids.astype(str)
     df["sample_id"] = sample_ids
-
-    # Calcular los centros
     centers = samples_Z.mean(axis=0)
     df_centers = pd.DataFrame(centers, columns=["x", "y", "z"])
     df_centers["point_id"] = [str(i) for i in range(num_points)]
-
-    # Graficar las muestras
     fig = px.scatter_3d(
         df,
         x="x", y="y", z="z",
@@ -332,8 +331,6 @@ def plot_Z_samples_3D(samples_Z):
         opacity=0.1,
         hover_data=["point_id", "sample_id"]
     )
-
-    # Agregar los centros
     fig.add_scatter3d(
         x=df_centers["x"],
         y=df_centers["y"],
@@ -357,7 +354,7 @@ def plot_Z_samples_3D(samples_Z):
     fig.show()
 
 
-def clustering3D(G,node_mapping, Z_ML, a_ML, Z_MAP, a_MAP, Z_CM, a_CM):
+def clustering3D(G,node_mapping, Z_ML, a_ML, Z_MAP, a_MAP, Z_CM, a_CM, verbose=False):
     from sklearn.cluster import SpectralClustering
     from sklearn.metrics import silhouette_score
     import matplotlib.pyplot as plt
@@ -398,17 +395,17 @@ def clustering3D(G,node_mapping, Z_ML, a_ML, Z_MAP, a_MAP, Z_CM, a_CM):
         score = silhouette_score(Z_MAP, labels)
         silhouette_scores.append(score)
 
-
-    plt.plot(cluster_range, silhouette_scores, marker='o')
-    plt.xlabel("Number of clusters (k)")
-    plt.ylabel("Silhouette score")
-    plt.title("Cluster validation using Silhouette score")
-    plt.grid(True)
-    plt.show()
+    if verbose:
+        plt.plot(cluster_range, silhouette_scores, marker='o')
+        plt.xlabel("Number of clusters (k)")
+        plt.ylabel("Silhouette score")
+        plt.title("Cluster validation using Silhouette score")
+        plt.grid(True)
+        plt.show()
 
 
     best_k = cluster_range[np.argmax(silhouette_scores)]
-    print(f"Best number of clusters: {best_k}")
+    if verbose: print(f"Best number of clusters: {best_k}")
 
 
     sc = SpectralClustering(n_clusters=best_k, affinity='nearest_neighbors', n_neighbors=5, random_state=42)
@@ -422,53 +419,56 @@ def clustering3D(G,node_mapping, Z_ML, a_ML, Z_MAP, a_MAP, Z_CM, a_CM):
 
     Y_CM_sorted = Y_CM[np.argsort(labels), :][:, np.argsort(labels)]
     Y_MAP_sorted = Y_MAP[np.argsort(labels), :][:, np.argsort(labels)]
+    if verbose:
+        plt.figure(figsize=(12,12))
+        plt.subplot(2,2,1)
+        ax1 = sns.heatmap(Y[np.argsort(labels), :][:, np.argsort(labels)], annot=False, cmap="Blues", cbar=False, square=True, linewidths=0.5, linecolor='white',
+                    xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
+        ax1.xaxis.set_ticks_position('top')
+        ax1.xaxis.set_label_position('top')
+        for boundary in boundaries:
+            ax1.axhline(boundary, color='black', linewidth=2)
+            ax1.axvline(boundary, color='black', linewidth=2)
 
-    plt.figure(figsize=(12,12))
-    plt.subplot(2,2,1)
-    ax1 = sns.heatmap(Y[np.argsort(labels), :][:, np.argsort(labels)], annot=False, cmap="Blues", cbar=False, square=True, linewidths=0.5, linecolor='white',
-                xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
-    ax1.xaxis.set_ticks_position('top')
-    ax1.xaxis.set_label_position('top')
-    for boundary in boundaries:
-        ax1.axhline(boundary, color='black', linewidth=2)
-        ax1.axvline(boundary, color='black', linewidth=2)
-
-    plt.title("True sociomatrix matrix")
-    plt.subplot(2,2,2)
-    ax2 = sns.heatmap(Y_ML[np.argsort(labels), :][:, np.argsort(labels)], annot=False, cmap="Reds", cbar=False, square=True, linewidths=0.5, linecolor='white',
-                xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
-    ax2.xaxis.set_ticks_position('top')
-    ax2.xaxis.set_label_position('top')
-    for boundary in boundaries:
-        ax2.axhline(boundary, color='black', linewidth=2)
-        ax2.axvline(boundary, color='black', linewidth=2)
-    plt.title("ML: Estimated sociomatrix matrix")
-    plt.subplot(2,2,3)
-    ax3 = sns.heatmap(Y_CM_sorted, annot=False, cmap="Reds", cbar=False, square=True, linewidths=0.5, linecolor='white',
-                xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
-    ax3.xaxis.set_ticks_position('top')
-    ax3.xaxis.set_label_position('top')
-    for boundary in boundaries:
-        ax3.axhline(boundary, color='black', linewidth=2)
-        ax3.axvline(boundary, color='black', linewidth=2)
-    plt.title("CM: Estimated sociomatrix matrix")
-    plt.subplot(2,2,4)
-    ax4 = sns.heatmap(Y_MAP_sorted, annot=False, cmap="Reds", cbar=False, square=True, linewidths=0.5, linecolor='white',
-                xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
-    ax4.xaxis.set_ticks_position('top')
-    ax4.xaxis.set_label_position('top')
-    for boundary in boundaries:
-        ax4.axhline(boundary, color='black', linewidth=2)
-        ax4.axvline(boundary, color='black', linewidth=2)
-    plt.title("MAP: Estimated sociomatrix matrix")
-    plt.show()
+        plt.title("True sociomatrix matrix")
+        plt.subplot(2,2,2)
+        ax2 = sns.heatmap(Y_ML[np.argsort(labels), :][:, np.argsort(labels)], annot=False, cmap="Reds", cbar=False, square=True, linewidths=0.5, linecolor='white',
+                    xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
+        ax2.xaxis.set_ticks_position('top')
+        ax2.xaxis.set_label_position('top')
+        for boundary in boundaries:
+            ax2.axhline(boundary, color='black', linewidth=2)
+            ax2.axvline(boundary, color='black', linewidth=2)
+        plt.title("ML: Estimated sociomatrix matrix")
+        plt.subplot(2,2,3)
+        ax3 = sns.heatmap(Y_CM_sorted, annot=False, cmap="Reds", cbar=False, square=True, linewidths=0.5, linecolor='white',
+                    xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
+        ax3.xaxis.set_ticks_position('top')
+        ax3.xaxis.set_label_position('top')
+        for boundary in boundaries:
+            ax3.axhline(boundary, color='black', linewidth=2)
+            ax3.axvline(boundary, color='black', linewidth=2)
+        plt.title("CM: Estimated sociomatrix matrix")
+        plt.subplot(2,2,4)
+        ax4 = sns.heatmap(Y_MAP_sorted, annot=False, cmap="Reds", cbar=False, square=True, linewidths=0.5, linecolor='white',
+                    xticklabels=np.argsort(labels), yticklabels=np.argsort(labels))
+        ax4.xaxis.set_ticks_position('top')
+        ax4.xaxis.set_label_position('top')
+        for boundary in boundaries:
+            ax4.axhline(boundary, color='black', linewidth=2)
+            ax4.axvline(boundary, color='black', linewidth=2)
+        plt.title("MAP: Estimated sociomatrix matrix")
+        plt.show()
 
     ##############################################################
-
-    plt.figure(figsize=(6,6))
-    cmap = plt.colormaps.get_cmap('Set1')
-    nx.draw(G, nx.spring_layout(G, seed=4),with_labels=False, node_color=[cmap(label) for label in labels], edge_color='gray', node_size=800)
-    node_mapping_inv = {v: k for k, v in node_mapping.items()}
-    nx.draw_networkx_labels(G, nx.spring_layout(G, seed=4), labels=node_mapping_inv, font_size=14, font_color='black')
-    plt.title("Florentine Families Network")
-    plt.show()
+    if verbose:
+        plt.figure(figsize=(6,6))
+        cmap = plt.colormaps.get_cmap('Set1')
+        nx.draw(G, nx.spring_layout(G, seed=4),with_labels=False, node_color=[cmap(label) for label in labels], edge_color='gray', node_size=800)
+        node_mapping_inv = {v: k for k, v in node_mapping.items()}
+        nx.draw_networkx_labels(G, nx.spring_layout(G, seed=4), labels=node_mapping_inv, font_size=14, font_color='black')
+        plt.title("Florentine Families Network")
+        plt.show()
+    
+    community = [[i for i, l in enumerate(labels) if l==tag] for tag in np.unique(labels)]
+    return community

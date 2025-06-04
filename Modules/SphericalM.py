@@ -3,6 +3,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import seaborn as sns
 from scipy.special import expit
+import plotly.express as px
 import pandas as pd
 from tqdm import tqdm
 np.random.seed(42)
