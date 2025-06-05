@@ -276,11 +276,11 @@ def ghmc(G, Z_init, a_init, b_init, num_samples, epsilon_init=0.05, std_dev_init
         if adapting and iter > 0:
             current_accept_rate = accept_count / total_updates if total_updates > 0 else 0
             if current_accept_rate < 0.80:
-                #epsilon = np.max(np.array([0.010,0.99*epsilon])) 
-                std_dev_Z = np.max(np.array([0.025,0.99*std_dev_Z]))
+                epsilon = np.max(np.array([0.010,0.995*epsilon])) 
+                std_dev_Z = np.max(np.array([0.025,0.995*std_dev_Z]))
             elif current_accept_rate > 0.60:
-                #epsilon = np.min(np.array([0.2,1.01*epsilon]))
-                std_dev_Z = np.min(np.array([0.75,1.01*std_dev_Z]))
+                epsilon = np.min(np.array([0.2,1.005*epsilon]))
+                std_dev_Z = np.min(np.array([0.75,1.005*std_dev_Z]))
             L = max(1, int(round(1/epsilon)))  
         elif iter == warmup:
             print(f"Final parameters: epsilon={epsilon:.4f}, L={L}, std_dev_Z={std_dev_Z:.4f}, std_dev_a={std_dev_a:.4f}, std_dev_b={std_dev_b:.4f}")
