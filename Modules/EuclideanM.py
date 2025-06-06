@@ -379,3 +379,35 @@ def saving_results(samples, Hamiltonian_p, LogL, acep_rate_history, filename="re
         pd.DataFrame(acep_rate_history, columns=["AcceptanceRate"]).to_excel(writer, sheet_name="AcceptanceRate", index=False)
 
     print(f"Results saved to {filename}")
+
+
+def load_results(filename="results.xlsx", N_samples=None, N_nodes=None, D=None):
+    import pandas as pd
+
+    if any(x is None for x in [N_samples, N_nodes, D]):
+        raise ValueError("You must provide dimensions to reshape samples_Z.")
+
+    print("Loading samples...")
+    df_Z = pd.read_excel(filename, sheet_name="samples_Z")
+    samples_Z = df_Z.values.reshape(N_samples, N_nodes, D)
+
+    df_a = pd.read_excel(filename, sheet_name="samples_a")
+    samples_a = df_a["a"].values
+
+    try:
+        df_b = pd.read_excel(filename, sheet_name="samples_b")
+        samples_b = df_b.values
+        if samples_b.shape[1] == 1:
+            samples_b = samples_b.flatten()
+    except ValueError:
+        samples_b = None
+
+    print("Loading diagnostics...")
+    Hamiltonian_p = pd.read_excel(filename, sheet_name="Hamiltonian")["Hamiltonian"].values
+    LogL = pd.read_excel(filename, sheet_name="LogL")["LogLikelihood"].values
+    acep_rate_history = pd.read_excel(filename, sheet_name="AcceptanceRate")["AcceptanceRate"].values
+
+    samples = [samples_Z, samples_a] + ([samples_b] if samples_b is not None else [])
+
+    print("Done.")
+    return samples, Hamiltonian_p, LogL, acep_rate_history
