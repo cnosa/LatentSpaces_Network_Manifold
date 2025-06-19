@@ -47,6 +47,7 @@ def grad_loglikelihood(G,Z,a):
 
 # Searching MLE
 
+
 def SearchingMLE(G, Z_init, a_init, max_iter=1000, tol=1e-4, alpha_init=0.1, rho=0.5, c=1e-4):
     Z0 = Z_init
     historyZ = [Z0]
