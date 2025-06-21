@@ -346,31 +346,31 @@ def MH_LSMN(Y, Theta, Model):
     if Model == "Spherical": print(f"Initial sigma_q_beta: {sigma_q_beta:.4f}")
 
 
-    if Model == "Euclidean":
-        def compute_Z_star(Z, Z0):
-            """ Computes Z* = Z0 Z^T (Z Z0^T Z0 Z^T)^(-1/2) Z using SVD """
-            A = Z @ Z0.T @ Z0 @ Z.T 
-            U, S, _ = np.linalg.svd(A)
-            S_inv_sqrt = np.diag(1.0 / np.sqrt(S))
-            A_inv_sqrt = U @ S_inv_sqrt @ U.T
-            Z_star =  Z0 @ Z.T @ A_inv_sqrt @ Z
-            # Compute Z*
-            return Z_star - np.mean(Z_star, axis=0)
-    if Model == "Spherical":
-        def compute_Z_star(Z, Z0):
-            """
-            Orthogonal Procrustes alignment following Schönemann (1966):
-            Finds rotation R = V U^T such that Z @ R best approximates Z0.
-            """
-            Z = np.asarray(Z)
-            Z0 = np.asarray(Z0)
-            M = Z0.T @ Z
-            U, S, Vt = np.linalg.svd(M)
+    #if Model == "Euclidean":
+    #    def compute_Z_star(Z, Z0):
+    #        """ Computes Z* = Z0 Z^T (Z Z0^T Z0 Z^T)^(-1/2) Z using SVD """
+    #        A = Z @ Z0.T @ Z0 @ Z.T 
+    #        U, S, _ = np.linalg.svd(A)
+    #        S_inv_sqrt = np.diag(1.0 / np.sqrt(S))
+    #        A_inv_sqrt = U @ S_inv_sqrt @ U.T
+    #        Z_star =  Z0 @ Z.T @ A_inv_sqrt @ Z
+    #        # Compute Z*
+    #        return Z_star - np.mean(Z_star, axis=0)
+    #if Model == "Spherical":
+    def compute_Z_star(Z, Z0):
+        """
+        Orthogonal Procrustes alignment following Schönemann (1966):
+        Finds rotation R = V U^T such that Z @ R best approximates Z0.
+        """
+        Z = np.asarray(Z)
+        Z0 = np.asarray(Z0)
+        M = Z0.T @ Z
+        U, S, Vt = np.linalg.svd(M)
 
-            R = Vt.T @ U.T
-            Z_star = Z @ R
+        R = Vt.T @ U.T
+        Z_star = Z @ R
 
-            return Z_star
+        return Z_star
 
     print("Log-likelihood: Bernoulli")
     def log_likelihood(params):
@@ -416,7 +416,7 @@ def MH_LSMN(Y, Theta, Model):
                     grad_beta += (Y[i,j] - expit(eta)) * (dist) 
             return grad_Z, grad_alpha, grad_beta
 
-    def SearchingMLE(max_iter=1000, tol=1e-8, r_init=0.1, rho=0.5, c=1e-4):
+    def SearchingMLE(max_iter=200, tol=1e-8, r_init=0.1, rho=0.5, c=1e-4):
         def update_Z(Z, grad_Z):
             for i in range(len(Z)):
                 proj_orth = grad_Z[i]-np.dot(Z[i], grad_Z[i]) * Z[i]
@@ -453,13 +453,14 @@ def MH_LSMN(Y, Theta, Model):
             historyZ.append(Zi)
             historyalpha.append(alphai)
             if Model == "Euclidean":
-                if r * np.linalg.norm(grad_Z) < tol and r * np.abs(grad_alpha) < tol:
-                    break
+                #if r * np.linalg.norm(grad_Z) < tol and r * np.abs(grad_alpha) < tol:
+                #    break
+                continue
             if Model == "Spherical":
                 betai = betai + r * grad_beta
                 historybeta.append(betai)
-                if r * np.linalg.norm(grad_Z) < tol and r * np.abs(grad_alpha) < tol and r * np.abs(grad_beta) < tol:
-                    break
+                #if r * np.linalg.norm(grad_Z) < tol and r * np.abs(grad_alpha) < tol and r * np.abs(grad_beta) < tol:
+                #    break
         if Model == "Euclidean":  
             return  Zi, alphai
         if Model == "Spherical":
@@ -482,15 +483,16 @@ def MH_LSMN(Y, Theta, Model):
         total = 0.0
         if Model == "Euclidean":
             Z, alpha = params
+            for i in range(n):
+                total += -0.5 * np.linalg.norm(Z[i]-Z_ML[i])**2 / sigma_prior_Z**2
             total += - 0.5 * np.sum(Z**2)/sigma_prior_Z**2 
-            total += - 0.5 * alpha**2 / sigma_prior_alpha**2
+            total += - 0.5 * (alpha-alpha_ML)**2 / sigma_prior_alpha**2
         if Model == "Spherical":
             Z, alpha, beta = params
             for i in range(n):
-                total += -0.5 * (Z[i].T @ Z[i] - 1)**2 /sigma_prior_Z**2 
-            total += np.log(1/(d*np.pi))
-            total += -0.5 * alpha**2 / sigma_prior_alpha**2
-            total += -0.5 * beta**2 / sigma_prior_beta**2
+                total += sigma_prior_Z * (Z_ML[i].T @ Z[i]-1)
+            total += -0.5 * (alpha-alpha_ML)**2 / sigma_prior_alpha**2
+            total += -0.5 * (beta-beta_ML)**2 / sigma_prior_beta**2
         return total
     
     results_per_chain = []
@@ -973,14 +975,14 @@ import plotly.express as px
 import plotly.graph_objects as go
 import matplotlib.ticker as ticker
 
-def plot_latent_space(results):
+def plot_latent_space(results, L = 2500):
     """
     Visualize latent space for Euclidean and Spherical models in 2D, 3D, S^1 or S^2.
 
     Parameters:
         results (dict): Output from MH algorithm.
     """
-    samples_Z = results['samples']['Z'][-1000:]
+    samples_Z = results['samples']['Z'][-L:]
     Model = results['Model']
     d = samples_Z.shape[2]
     n = samples_Z.shape[1]
@@ -1115,8 +1117,8 @@ def plot_latent_space(results):
         def format_func(x, pos):
             return f"{x:.1f}"
 
-        ax.xaxis.set_major_locator(ticker.MultipleLocator(np.pi/8))
-        ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda val, pos: f"{val/np.pi:.3f}π"))
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(np.pi/4))
+        ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda val, pos: f"{val/np.pi:.2f}π"))
 
         ax.set_rlim(0, r0 + n_nodes * delta_r + 0.2)
 
@@ -1359,17 +1361,24 @@ def prior_predictive_check(results):
 
     # Sample from priors
     if Model == "Euclidean":
-        samples_Z = sigma_prior_Z * np.random.randn(n_samples, n, d)
-        samples_alpha = sigma_prior_alpha * np.random.randn(n_samples)
+        Z_CM = results['cm_estimate']['Z']
+        alpha_CM = results['cm_estimate']['alpha']
+
+        samples_Z = sigma_prior_Z * (Z_CM + np.random.randn(n_samples, n, d))
+        samples_alpha = sigma_prior_alpha * (alpha_CM + np.random.randn(n_samples))
         samples_beta = None
     elif Model == "Spherical":
-        # For S^1 or S^d hypersphere, we can use normal and normalize
-        raw_Z = np.random.randn(n_samples, n, d)
-        norms = np.linalg.norm(raw_Z, axis=2, keepdims=True)
-        samples_Z = raw_Z / norms
-        samples_alpha = sigma_prior_alpha * np.random.randn(n_samples)
+        Z_CM = results['cm_estimate']['Z']
+        alpha_CM = results['cm_estimate']['alpha']
+        beta_CM = results['cm_estimate']['beta']
+
+        samples_Z = np.zeros((n_samples, n, d))
+        for sample in range(n_samples):
+            for i in range(n):
+                samples_Z[sample, i, :] = random_VMF(Z_CM[i], sigma_prior_Z)
+        samples_alpha = sigma_prior_alpha * (alpha_CM + np.random.randn(n_samples))
         sigma_prior_beta = Theta['sigma_prior_beta']
-        samples_beta = sigma_prior_beta * np.random.randn(n_samples)
+        samples_beta = sigma_prior_beta * (beta_CM + np.random.randn(n_samples))
     else:
         raise ValueError("Unknown model type.")
 
