@@ -312,7 +312,7 @@ def MH_LSMN(Y, Theta, Model):
     print(f"Metropolis-Hastings for {Model} latent space models on networks")
     print("="*80)
 
-    min_ar, max_ar = 0.6, 0.8
+    min_ar, max_ar = 0.3, 0.5
     n = Y.shape[0]
     Z0 = Theta['Z0']
     alpha0 = Theta['alpha0']
@@ -336,7 +336,7 @@ def MH_LSMN(Y, Theta, Model):
 
     print(f"Number of chains: {n_chains}")
     print(f"MH samples of size {n_samples} with burn-in {burn_in} and thinning {thin}")
-    print(f"Number of iterations per chain: {n_iterations}")
+    print(f"Number of draws per chain: {n_iterations}")
     
 
     
@@ -345,32 +345,32 @@ def MH_LSMN(Y, Theta, Model):
     print(f"Initial sigma_q_alpha: {sigma_q_alpha:.4f}")
     if Model == "Spherical": print(f"Initial sigma_q_beta: {sigma_q_beta:.4f}")
 
+    
+    if Model == "Euclidean":
+        def compute_Z_star(Z, Z0):
+            """ Computes Z* = Z0 Z^T (Z Z0^T Z0 Z^T)^(-1/2) Z using SVD """
+            A = Z @ Z0.T @ Z0 @ Z.T 
+            U, S, _ = np.linalg.svd(A)
+            S_inv_sqrt = np.diag(1.0 / np.sqrt(S))
+            A_inv_sqrt = U @ S_inv_sqrt @ U.T
+            Z_star =  Z0 @ Z.T @ A_inv_sqrt @ Z
+            # Compute Z*
+            return Z_star - np.mean(Z_star, axis=0)
+    if Model == "Spherical":
+        def compute_Z_star(Z, Z0):
+            """
+            Orthogonal Procrustes alignment following Schönemann (1966):
+            Finds rotation R = V U^T such that Z @ R best approximates Z0.
+            """
+            Z = np.asarray(Z)
+            Z0 = np.asarray(Z0)
+            M = Z0.T @ Z
+            U, S, Vt = np.linalg.svd(M)
 
-    #if Model == "Euclidean":
-    #    def compute_Z_star(Z, Z0):
-    #        """ Computes Z* = Z0 Z^T (Z Z0^T Z0 Z^T)^(-1/2) Z using SVD """
-    #        A = Z @ Z0.T @ Z0 @ Z.T 
-    #        U, S, _ = np.linalg.svd(A)
-    #        S_inv_sqrt = np.diag(1.0 / np.sqrt(S))
-    #        A_inv_sqrt = U @ S_inv_sqrt @ U.T
-    #        Z_star =  Z0 @ Z.T @ A_inv_sqrt @ Z
-    #        # Compute Z*
-    #        return Z_star - np.mean(Z_star, axis=0)
-    #if Model == "Spherical":
-    def compute_Z_star(Z, Z0):
-        """
-        Orthogonal Procrustes alignment following Schönemann (1966):
-        Finds rotation R = V U^T such that Z @ R best approximates Z0.
-        """
-        Z = np.asarray(Z)
-        Z0 = np.asarray(Z0)
-        M = Z0.T @ Z
-        U, S, Vt = np.linalg.svd(M)
+            R = Vt.T @ U.T
+            Z_star = Z @ R
 
-        R = Vt.T @ U.T
-        Z_star = Z @ R
-
-        return Z_star
+            return Z_star
 
     print("Log-likelihood: Bernoulli")
     def log_likelihood(params):
@@ -416,7 +416,12 @@ def MH_LSMN(Y, Theta, Model):
                     grad_beta += (Y[i,j] - expit(eta)) * (dist) 
             return grad_Z, grad_alpha, grad_beta
 
-    def SearchingMLE(max_iter=200, tol=1e-8, r_init=0.1, rho=0.5, c=1e-4):
+    print("-"*60)
+
+    def SearchingMLE(max_iter=500, tol=1e-8, r_init=0.1, rho=0.5, c=1e-4):
+
+        print("Searching for MLE using gradient ascent")
+
         def update_Z(Z, grad_Z):
             for i in range(len(Z)):
                 proj_orth = grad_Z[i]-np.dot(Z[i], grad_Z[i]) * Z[i]
@@ -461,6 +466,9 @@ def MH_LSMN(Y, Theta, Model):
                 historybeta.append(betai)
                 #if r * np.linalg.norm(grad_Z) < tol and r * np.abs(grad_alpha) < tol and r * np.abs(grad_beta) < tol:
                 #    break
+
+        print(f"MLE found after {len(historyZ)-1} iterations")
+
         if Model == "Euclidean":  
             return  Zi, alphai
         if Model == "Spherical":
@@ -472,7 +480,7 @@ def MH_LSMN(Y, Theta, Model):
     if Model == "Spherical":
         Z_ML, alpha_ML, beta_ML = SearchingMLE()   
         
-        
+    print("-"*60)    
 
     print("Log-prior:")
     print("sigma_prior_Z: ", sigma_prior_Z)
@@ -483,16 +491,13 @@ def MH_LSMN(Y, Theta, Model):
         total = 0.0
         if Model == "Euclidean":
             Z, alpha = params
-            for i in range(n):
-                total += -0.5 * np.linalg.norm(Z[i]-Z_ML[i])**2 / sigma_prior_Z**2
-            total += - 0.5 * np.sum(Z**2)/sigma_prior_Z**2 
-            total += - 0.5 * (alpha-alpha_ML)**2 / sigma_prior_alpha**2
+            total += -0.5 * np.sum(Z)**2 / sigma_prior_Z**2
+            total += - 0.5 * alpha**2 / sigma_prior_alpha**2
         if Model == "Spherical":
             Z, alpha, beta = params
-            for i in range(n):
-                total += sigma_prior_Z * (Z_ML[i].T @ Z[i]-1)
-            total += -0.5 * (alpha-alpha_ML)**2 / sigma_prior_alpha**2
-            total += -0.5 * (beta-beta_ML)**2 / sigma_prior_beta**2
+            total += - n / sigma_prior_Z
+            total += -0.5 * alpha**2 / sigma_prior_alpha**2
+            total += -0.5 * beta**2 / sigma_prior_beta**2
         return total
     
     results_per_chain = []
@@ -550,7 +555,7 @@ def MH_LSMN(Y, Theta, Model):
 
         print("*"*32 + f"\nChain {chain}. Sampling\n" + "*"*32)
 
-        for i in tqdm(range(n_iterations), desc="Sampling progress", unit=" samples"):
+        for i in tqdm(range(n_iterations), desc="Sampling progress", unit=" draws"):
 
             # Z update      
             for l in range(n):
@@ -641,7 +646,7 @@ def MH_LSMN(Y, Theta, Model):
                     acc_rate_alpha = acceptance_rate_trace_alpha[i]
                     acc_rate_beta = acceptance_rate_trace_beta[i]
                     factor_Z = 1.0 if acc_rate_Z < min_ar else -1.0 if acc_rate_Z > max_ar else 0.0
-                    sigma_q_Z = np.minimum(np.maximum(sigma_q_Z + factor_Z, 100.0), 300.0)
+                    sigma_q_Z = np.minimum(np.maximum(sigma_q_Z + factor_Z, 10.0), 300.0)
                     factor_alpha = 0.995 if acc_rate_alpha < min_ar else 1.005 if acc_rate_alpha > max_ar else 1.0
                     sigma_q_alpha = np.minimum(np.maximum(sigma_q_alpha * factor_alpha, 0.001), 3.0)
                     factor_beta = 0.995 if acc_rate_beta < min_ar else 1.005 if acc_rate_beta > max_ar else 1.0
@@ -866,8 +871,8 @@ def plot_mcmc_diagnostics_panel(results):
             axes[i].axhline(np.mean(series[1]), color='lightblue',alpha=0.2, linestyle='--', label='Mean - alpha')
             if Model == 'Spherical':
                 axes[i].axhline(np.mean(series[2]), color='purple',alpha=0.2, linestyle='--', label='Mean - beta')
-            axes[i].axhline(0.6, color='red', linestyle=':', linewidth=1, label='Target range')
-            axes[i].axhline(0.8, color='red', linestyle=':', linewidth=1)
+            axes[i].axhline(0.30, color='red', linestyle=':', linewidth=1, label='Target range')
+            axes[i].axhline(0.50, color='red', linestyle=':', linewidth=1)
             axes[i].set_ylim(-0.01, 1.01)
         else:
             iterations = np.arange(1, len(series) + 1)
@@ -1328,6 +1333,7 @@ def pairwise_sociomatrix_plot(results, Model):
             else:
                 ax.axis('off')
     
+    plt.suptitle("Posterior Predictive Check", fontsize=20)
     plt.tight_layout()
     plt.show()
 
@@ -1361,24 +1367,17 @@ def prior_predictive_check(results):
 
     # Sample from priors
     if Model == "Euclidean":
-        Z_CM = results['cm_estimate']['Z']
-        alpha_CM = results['cm_estimate']['alpha']
-
-        samples_Z = sigma_prior_Z * (Z_CM + np.random.randn(n_samples, n, d))
-        samples_alpha = sigma_prior_alpha * (alpha_CM + np.random.randn(n_samples))
+        samples_Z = sigma_prior_Z * np.random.randn(n_samples, n, d)
+        samples_alpha = sigma_prior_alpha * np.random.randn(n_samples)
         samples_beta = None
     elif Model == "Spherical":
-        Z_CM = results['cm_estimate']['Z']
-        alpha_CM = results['cm_estimate']['alpha']
-        beta_CM = results['cm_estimate']['beta']
-
         samples_Z = np.zeros((n_samples, n, d))
         for sample in range(n_samples):
             for i in range(n):
-                samples_Z[sample, i, :] = random_VMF(Z_CM[i], sigma_prior_Z)
-        samples_alpha = sigma_prior_alpha * (alpha_CM + np.random.randn(n_samples))
+                samples_Z[sample, i, :] = random_VMF(np.eye(d)[0,:] , 0.0)
+        samples_alpha = sigma_prior_alpha * np.random.randn(n_samples)
         sigma_prior_beta = Theta['sigma_prior_beta']
-        samples_beta = sigma_prior_beta * (beta_CM + np.random.randn(n_samples))
+        samples_beta = sigma_prior_beta * np.random.randn(n_samples)
     else:
         raise ValueError("Unknown model type.")
 
