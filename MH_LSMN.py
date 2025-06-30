@@ -418,10 +418,13 @@ def MH_LSMN(Y, Theta, Model):
 
     print("-"*60)
 
-    def SearchingMLE(max_iter=500, tol=1e-8, r_init=0.1, rho=0.5, c=1e-4):
+    def SearchingMLE(params, max_iter=500, tol=1e-4, r_init=0.1, rho=0.5, c=1e-4):
 
-        print("Searching for MLE using gradient ascent")
-
+        if Model == "Euclidean":
+            Z0, alpha0 = params
+        if Model == "Spherical":
+            Z0, alpha0, beta0 = params
+        
         def update_Z(Z, grad_Z):
             for i in range(len(Z)):
                 proj_orth = grad_Z[i]-np.dot(Z[i], grad_Z[i]) * Z[i]
@@ -430,11 +433,11 @@ def MH_LSMN(Y, Theta, Model):
             return Z
 
         Zi = Z0.copy()
-        alphai = alpha0.copy()
+        alphai = np.float64(alpha0).copy()
         historyZ = [Zi]
         historyalpha = [alphai]
         if Model == "Spherical": 
-            betai = beta0.copy()
+            betai = np.float64(beta0).copy()
             historybeta = [betai]
 
         for i in range(max_iter):
@@ -458,27 +461,52 @@ def MH_LSMN(Y, Theta, Model):
             historyZ.append(Zi)
             historyalpha.append(alphai)
             if Model == "Euclidean":
-                #if r * np.linalg.norm(grad_Z) < tol and r * np.abs(grad_alpha) < tol:
-                #    break
-                continue
+                if np.linalg.norm(grad_Z) < tol and np.abs(grad_alpha) < tol:
+                    break
             if Model == "Spherical":
                 betai = betai + r * grad_beta
                 historybeta.append(betai)
-                #if r * np.linalg.norm(grad_Z) < tol and r * np.abs(grad_alpha) < tol and r * np.abs(grad_beta) < tol:
-                #    break
+                if np.linalg.norm(grad_Z) < tol and np.abs(grad_alpha) < tol and np.abs(grad_beta) < tol:
+                    break
 
-        print(f"MLE found after {len(historyZ)-1} iterations")
 
         if Model == "Euclidean":  
             return  Zi, alphai
         if Model == "Spherical":
             return  Zi, alphai, betai
             
+    def MultiStartMLE(n_starts=10, max_iter=150, tol=1e-3):
+        print("Searching for MLE using gradient ascent")
+        best_ll = -np.inf
+        best_params = None
+
+        for s in range(n_starts):
+            # Random initialization
+            Z0 = sigma_prior_Z * np.random.randn(n, d)
+            Z0 = Z0 / np.linalg.norm(Z0, axis=1, keepdims=True) if Model == "Spherical" else Z0
+            alpha0 = sigma_prior_alpha * np.random.normal()
+            if Model == "Spherical":
+                beta0 = sigma_prior_beta * np.random.normal()
+            # Run optimization
+            if Model == "Euclidean":
+                params = SearchingMLE((Z0,alpha0), max_iter=max_iter, tol=tol)
+                ll = log_likelihood(params)
+            if Model == "Spherical":
+                params = SearchingMLE((Z0,alpha0,beta0),max_iter=max_iter, tol=tol)
+                ll = log_likelihood(params)
+            if ll > best_ll:
+                best_ll = ll
+                best_params = params
+
+        print(f"Best log-likelihood after {n_starts} starts: {best_ll:.4f}")
+        return best_params
+
+
 
     if Model == "Euclidean":
-        Z_ML, alpha_ML = SearchingMLE()
+        Z_ML, alpha_ML = MultiStartMLE(n_starts=10)
     if Model == "Spherical":
-        Z_ML, alpha_ML, beta_ML = SearchingMLE()   
+        Z_ML, alpha_ML, beta_ML = MultiStartMLE(n_starts=10) 
         
     print("-"*60)    
 
@@ -491,7 +519,7 @@ def MH_LSMN(Y, Theta, Model):
         total = 0.0
         if Model == "Euclidean":
             Z, alpha = params
-            total += -0.5 * np.sum(Z)**2 / sigma_prior_Z**2
+            total += -0.5 * np.sum(Z**2) / sigma_prior_Z**2
             total += - 0.5 * alpha**2 / sigma_prior_alpha**2
         if Model == "Spherical":
             Z, alpha, beta = params
@@ -504,17 +532,13 @@ def MH_LSMN(Y, Theta, Model):
 
     for chain in range(n_chains):
 
-        Z0 = Theta['Z0']
-        alpha0 = Theta['alpha0']
-        if Model == "Spherical": beta0 = Theta['beta0']
-
         sigma_q_Z = Theta['sigma_q_Z']
         sigma_q_alpha = Theta['sigma_q_alpha']
         if Model == "Spherical": sigma_q_beta = Theta['sigma_q_beta']
 
-        Z_current = Z0.copy()
-        alpha_current = alpha0.copy()
-        if Model == "Spherical": beta_current = beta0.copy()
+        Z_current = Z_ML.copy()
+        alpha_current = np.float64(alpha_ML).copy()
+        if Model == "Spherical": beta_current = np.float64(beta_ML).copy()
 
         Z_chain = np.zeros((n_iterations, n, d))
         alpha_chain = np.zeros(n_iterations)
