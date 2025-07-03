@@ -525,7 +525,7 @@ def MH_LSMN(Y, Theta, Model):
             Z, alpha, beta = params
             total += - n / sigma_prior_Z
             total += -0.5 * alpha**2 / sigma_prior_alpha**2
-            total += -0.5 * beta**2 / sigma_prior_beta**2
+            total += -np.log(beta) - 0.5 * (( np.log(beta) - 1.0)**2) / (sigma_prior_beta**2)
         return total
     
     results_per_chain = []
@@ -633,11 +633,11 @@ def MH_LSMN(Y, Theta, Model):
 
             if Model == "Spherical":
                 # beta update
-                beta_proposed =  np.random.normal(beta_current, sigma_q_beta)
+                beta_proposed =  beta_current * np.exp(np.random.normal(0, sigma_q_beta))
                 proposed_ll = log_likelihood((Z_current, alpha_current, beta_proposed))
                 proposed_lp = log_prior((Z_current, alpha_current, beta_proposed))
                 proposed_post = proposed_ll + proposed_lp
-                log_r = proposed_post - current_post
+                log_r = proposed_post - current_post  + np.log(beta_current) - np.log(beta_proposed)
                 if np.log(np.random.rand()) < log_r:
                     beta_current = beta_proposed
                     current_ll = proposed_ll
@@ -1401,7 +1401,7 @@ def prior_predictive_check(results):
                 samples_Z[sample, i, :] = random_VMF(np.eye(d)[0,:] , 0.0)
         samples_alpha = sigma_prior_alpha * np.random.randn(n_samples)
         sigma_prior_beta = Theta['sigma_prior_beta']
-        samples_beta = sigma_prior_beta * np.random.randn(n_samples)
+        samples_beta = sigma_prior_beta * np.random.randn(n_samples) + 1.0
     else:
         raise ValueError("Unknown model type.")
 
