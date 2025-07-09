@@ -3,9 +3,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import pandas as pd
 import seaborn as sns
+import scipy
 from scipy import stats
 from scipy.special import expit
-from scipy.stats import gamma
 import plotly.express as px
 import pandas as pd
 from tqdm import tqdm
@@ -14,7 +14,7 @@ np.random.seed(42)
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, message="use_inf_as_na option is deprecated")
 warnings.filterwarnings("ignore", category=UserWarning, message="KMeans is known to have a memory leak on Windows with MKL")
-
+warnings.filterwarnings("ignore", category=RuntimeWarning, message="RuntimeWarning: invalid value encountered in scalar divide return (xy * (M - ab)).sum() / np.sqrt(vara * varb)")
 #############################################################################
 #############################################################################
 #############################################################################
@@ -248,7 +248,7 @@ def compute_model_criteria(Y, samples_Z, samples_alpha, samples_beta=None):
             for j in range(n):
                 if i != j:
                     if samples_beta is None:  
-                        dist = 0.5 * np.linalg.norm(samples_Z[l, i] - samples_Z[l, j])**2
+                        dist = np.linalg.norm(samples_Z[l, i] - samples_Z[l, j])
                         eta = samples_alpha[l] - dist
                     else: 
                         dot = np.dot(samples_Z[l, i], samples_Z[l, j])
@@ -278,7 +278,7 @@ def compute_model_criteria(Y, samples_Z, samples_alpha, samples_beta=None):
         for j in range(n):
             if i != j:
                 if samples_beta is None:
-                    dist = 0.5 * np.linalg.norm(Z_mean[i] - Z_mean[j])**2
+                    dist = np.linalg.norm(Z_mean[i] - Z_mean[j])
                     eta = alpha_mean - dist
                 else:
                     dot = np.dot(Z_mean[i], Z_mean[j])
@@ -309,11 +309,12 @@ def compute_model_criteria(Y, samples_Z, samples_alpha, samples_beta=None):
 # Estimation procedure
 
 def Estimation_LSMN(Y, Theta, Model):
-    print("="*80)
+    print("="*80)   
     print(f"Metropolis-Hastings for {Model} latent space models on networks")
     print("="*80)
 
     min_ar, max_ar = 0.3, 0.5
+    
     n = Y.shape[0]
     Z0 = Theta['Z0']
     alpha0 = Theta['alpha0']
@@ -321,7 +322,9 @@ def Estimation_LSMN(Y, Theta, Model):
     sigma_prior_Z = Theta['sigma_prior_Z']
     sigma_prior_alpha = Theta['sigma_prior_alpha']
     if Model == "Spherical": sigma_prior_beta = Theta['sigma_prior_beta']
-   
+    rho = -0.5
+    mu_alpha_beta = np.array([0.0,5.0])
+
     d = Z0.shape[1]
 
     n_samples = Theta['n_samples']
@@ -352,7 +355,7 @@ def Estimation_LSMN(Y, Theta, Model):
             """ Computes Z* = Z0 Z^T (Z Z0^T Z0 Z^T)^(-1/2) Z using SVD """
             A = Z @ Z0.T @ Z0 @ Z.T 
             U, S, _ = np.linalg.svd(A)
-            S_inv_sqrt = np.diag(1.0 / np.sqrt(S))
+            S_inv_sqrt = np.diag(1.0 / (np.sqrt(S) + 1e-10))
             A_inv_sqrt = U @ S_inv_sqrt @ U.T
             Z_star =  Z0 @ Z.T @ A_inv_sqrt @ Z
             # Compute Z*
@@ -380,7 +383,7 @@ def Estimation_LSMN(Y, Theta, Model):
             Z, alpha = params
             for i in range(n):
                 for j in range(i+1,n):
-                    dist = 0.5 * np.linalg.norm(Z[i] - Z[j])**2
+                    dist = np.linalg.norm(Z[i] - Z[j])
                     eta = alpha - dist
                     total += eta * Y[i,j] + (-np.logaddexp(0, eta))
         if Model == "Spherical":
@@ -400,9 +403,9 @@ def Estimation_LSMN(Y, Theta, Model):
             grad_Z = np.zeros_like(Z)
             for i in range(n):
                 for j in range(i+1,n):
-                    dist = 0.5 * np.linalg.norm(Z[i] - Z[j])**2
+                    dist = np.linalg.norm(Z[i] - Z[j])
                     eta = alpha - dist
-                    grad_Z[i,:] += (-1) * (Z[i] - Z[j]) * (Y[i,j] - expit(eta))
+                    grad_Z[i,:] += (-1) * ((Z[i] - Z[j])/(dist + 1e-10)) * (Y[i,j] - expit(eta))
                     grad_alpha +=  (Y[i,j] - expit(eta))
             return grad_Z, grad_alpha
         if Model == "Spherical":
@@ -419,7 +422,7 @@ def Estimation_LSMN(Y, Theta, Model):
 
     print("-"*60)
 
-    def SearchingMLE(params, max_iter=250, tol=1e-4, r_init=0.1, rho=0.5, c=1e-4):
+    def SearchingMLE(params, max_iter=250, tol=1e-3, r_init=0.1, rho=0.5, c=1e-4):
 
         if Model == "Euclidean":
             Z0, alpha0 = params
@@ -445,27 +448,32 @@ def Estimation_LSMN(Y, Theta, Model):
             r = r_init
             if Model == "Euclidean":
                 grad_Z, grad_alpha = grad_loglikelihood((Zi,alphai))
-                while log_likelihood((Zi + r * grad_Z, alphai+r*grad_alpha)) < log_likelihood((Zi,alphai))+ c * r * (np.trace(np.transpose(grad_Z) @ Zi) + grad_alpha * alphai):
+                while log_likelihood((Zi + r * grad_Z, alphai+r*grad_alpha)) < log_likelihood((Zi,alphai))+ c * r * (np.sum(grad_Z * grad_Z) + grad_alpha**2):
                     r *= rho
                     if r < 1e-9:
                         r = 0.0
                         break
             if Model == "Spherical":
                 grad_Z, grad_alpha, grad_beta = grad_loglikelihood((Zi,alphai,betai))
-                while  log_likelihood((update_Z(Zi, r*grad_Z) ,alphai+r*grad_alpha,betai+r*grad_beta)) < log_likelihood((Zi,alphai,betai))+ c * r * (np.trace(np.transpose(grad_Z) @ Zi) + grad_alpha * alphai + grad_beta * betai):
+                while  log_likelihood((update_Z(Zi, r*grad_Z) ,alphai+r*grad_alpha,betai+r*grad_beta)) < log_likelihood((Zi,alphai,betai))+ c * r * (np.sum(grad_Z * grad_Z) + grad_alpha**2 + grad_beta**2):
                     r *= rho
                     if r < 1e-9:
                         r = 0.0
                         break
-            Zi = Zi + r * grad_Z  
-            alphai = alphai + r * grad_alpha
-            historyZ.append(Zi)
-            historyalpha.append(alphai)
+            
             if Model == "Euclidean":
+                Zi = Zi + r * grad_Z  
+                alphai = alphai + r * grad_alpha
+                historyZ.append(Zi)
+                historyalpha.append(alphai)
                 if np.linalg.norm(grad_Z) < tol and np.abs(grad_alpha) < tol:
                     break
             if Model == "Spherical":
+                Zi = update_Z(Zi, r * grad_Z) 
+                alphai = alphai + r * grad_alpha
                 betai = betai + r * grad_beta
+                historyZ.append(Zi)
+                historyalpha.append(alphai)
                 historybeta.append(betai)
                 if np.linalg.norm(grad_Z) < tol and np.abs(grad_alpha) < tol and np.abs(grad_beta) < tol:
                     break
@@ -487,7 +495,9 @@ def Estimation_LSMN(Y, Theta, Model):
             Z0 = Z0 / np.linalg.norm(Z0, axis=1, keepdims=True) if Model == "Spherical" else Z0
             alpha0 = sigma_prior_alpha * np.random.normal()
             if Model == "Spherical":
-                beta0 = np.exp(np.random.normal(-0.5 * sigma_prior_beta**2, sigma_prior_beta))
+                alpha_beta_0 = np.random.multivariate_normal(mu_alpha_beta , np.array([[sigma_prior_alpha**2,rho*sigma_prior_alpha*sigma_prior_beta],[rho*sigma_prior_alpha*sigma_prior_beta,sigma_prior_beta**2]]), size=1)
+                alpha0 = np.float64(alpha_beta_0[0,0])
+                beta0 = np.float64(alpha_beta_0[0,1])
             # Run optimization
             if Model == "Euclidean":
                 params = SearchingMLE((Z0,alpha0), max_iter=max_iter, tol=tol)
@@ -505,9 +515,9 @@ def Estimation_LSMN(Y, Theta, Model):
 
 
     if Model == "Euclidean":
-        Z_ML, alpha_ML = MultiStartMLE(n_starts=10)
+        Z_ML, alpha_ML = MultiStartMLE(n_starts=20)
     if Model == "Spherical":
-        Z_ML, alpha_ML, beta_ML = MultiStartMLE(n_starts=10) 
+        Z_ML, alpha_ML, beta_ML = MultiStartMLE(n_starts=20) 
         
     print("-"*60)    
 
@@ -520,14 +530,13 @@ def Estimation_LSMN(Y, Theta, Model):
         total = 0.0
         if Model == "Euclidean":
             Z, alpha = params
-            total += -0.5 * np.sum(Z**2) / sigma_prior_Z**2
-            total += - 0.5 * alpha**2 / sigma_prior_alpha**2
+            total += - 0.5 * n * d * np.log(2 * np.pi)- n * np.log(sigma_prior_Z) - 0.5 * np.sum(Z**2) / sigma_prior_Z**2
+            total += - 0.5 * np.log(2 * np.pi)- np.log(sigma_prior_alpha) - 0.5 * alpha**2 / sigma_prior_alpha**2
         if Model == "Spherical":
             Z, alpha, beta = params
-            total += - n / sigma_prior_Z
-            rho = -0.5
+            total += - 0.5 * n * d * np.log(2 * np.pi) + n * np.log(scipy.special.gamma(d/2))
             Sigma_prior_inv = (1/(sigma_prior_alpha**2 * sigma_prior_beta**2 * (1 - rho**2))) * np.array([[sigma_prior_beta**2,-rho*sigma_prior_alpha*sigma_prior_beta],[-rho*sigma_prior_alpha*sigma_prior_beta,sigma_prior_alpha**2]])
-            total += - 0.5 * ((np.array([alpha, beta]) - np.array([0.0, 10.0])).T @ Sigma_prior_inv @ (np.array([alpha, beta]) - np.array([0.0, 10.0])))
+            total += - np.log(2 * np.pi)- np.log(sigma_prior_alpha*sigma_prior_beta*np.sqrt(1-rho**2)) - 0.5 * ((np.array([alpha, beta]) - mu_alpha_beta).T @ Sigma_prior_inv @ (np.array([alpha, beta]) - mu_alpha_beta))
         return total
     
     results_per_chain = []
@@ -784,9 +793,9 @@ def Estimation_LSMN(Y, Theta, Model):
         for i in range(n):
             for j in range(n):
                 if j != i:
-                    Y_ML[i,j] = expit(alpha_ML - 0.5 * np.linalg.norm(Z_ML[i] - Z_ML[j])**2)
-                    Y_CM[i,j] = expit(alpha_CM - 0.5 * np.linalg.norm(Z_CM[i] - Z_CM[j])**2)
-                    Y_MAP[i,j] = expit(alpha_MAP - 0.5 * np.linalg.norm(Z_MAP[i] - Z_MAP[j])**2)
+                    Y_ML[i,j] = expit(alpha_ML - np.linalg.norm(Z_ML[i] - Z_ML[j]))
+                    Y_CM[i,j] = expit(alpha_CM - np.linalg.norm(Z_CM[i] - Z_CM[j]))
+                    Y_MAP[i,j] = expit(alpha_MAP - np.linalg.norm(Z_MAP[i] - Z_MAP[j]))
     if Model == "Spherical":
         dic, waic, bic = compute_model_criteria(Y, Z_chain, alpha_chain, beta_chain)
         Y_ML = np.zeros((n, n))
@@ -1010,7 +1019,7 @@ import matplotlib.ticker as ticker
 
 def plot_latent_space(results, L = 2500):
     """
-    Visualize latent space for Euclidean and Spherical models in 2D, 3D, S^1 or S^2.
+    Visualize latent space for Euclidean and Spherical models in R^2, R^3, S^1 or S^2.
 
     Parameters:
         results (dict): Output from MH algorithm.
@@ -1150,7 +1159,7 @@ def plot_latent_space(results, L = 2500):
         def format_func(x, pos):
             return f"{x:.1f}"
 
-        ax.xaxis.set_major_locator(ticker.MultipleLocator(np.pi/4))
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(np.pi/2))
         ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda val, pos: f"{val/np.pi:.2f}π"))
 
         ax.set_rlim(0, r0 + n_nodes * delta_r + 0.2)
@@ -1179,13 +1188,13 @@ from networkx.algorithms.community import greedy_modularity_communities
 from sklearn.cluster import SpectralClustering
 from sklearn.metrics import silhouette_score
 
-def posterior_predictive_check(results, plot_pairwise=True):
+def posterior_predictive_check(results, plot_statistics=True, plot_pairwise=True, dictionary_info=False):
     """
     Full Posterior Predictive Checking for both Euclidean and Spherical latent space models.
     
     Arguments:
         results: dict
-            Output dictionary from MH_LSMN.
+            Output dictionary from Estimation_LSMN.
         plot_pairwise: bool
             If True, generates pairwise sociomatrix plots.
     """
@@ -1247,7 +1256,7 @@ def posterior_predictive_check(results, plot_pairwise=True):
             for j in range(n):
                 if i != j:
                     if Model == "Euclidean":
-                        dist = 0.5 * np.linalg.norm(samples_Z[l, i] - samples_Z[l, j])**2
+                        dist = np.linalg.norm(samples_Z[l, i] - samples_Z[l, j])
                         eta = samples_alpha[l] - dist
                     else:  # Spherical
                         dot = np.dot(samples_Z[l, i], samples_Z[l, j])
@@ -1277,38 +1286,63 @@ def posterior_predictive_check(results, plot_pairwise=True):
     stats_df = {key: [d[key] for d in stats_list] for key in stats_list[0]}
     stats_df["Modularity"] = modularities
 
-    # Plot posterior predictive histograms
-    fig, axes = plt.subplots(2, 4, figsize=(24, 10))
-    axes = axes.flatten()
-    selected_stats = list(stats_df.keys())
 
-    for i, stat in enumerate(selected_stats):
-        values = np.array(stats_df[stat])
-        real_value = real_stats[stat] if stat != "Modularity" else real_modularity
-        mean_val = np.mean(values)
-        q_low, q_high = np.quantile(values, [0.025, 0.975])
-        p_value = np.mean(values >= real_value)
+    if plot_statistics:
+        # Plot posterior predictive histograms
+        fig, axes = plt.subplots(2, 4, figsize=(24, 10))
+        axes = axes.flatten()
+        selected_stats = list(stats_df.keys())
 
-        sns.histplot(values, bins=30, color="gray", edgecolor="white", stat='density', ax=axes[i])
-        axes[i].axvline(q_low, color='red', linestyle=':', linewidth=1)
-        axes[i].axvline(q_high, color='red', linestyle=':', linewidth=1)
-        axes[i].axvline(mean_val, color='blue', linestyle='--', linewidth=1)
-        if stat != "Modularity":
-            axes[i].axvline(real_value, color='black', linewidth=2, label="Observed")
-        else:
-            axes[i].axvline(real_value, color='black', linewidth=2, label="Observed: Greedy")
-            axes[i].axvline(latent_modularity, color='black', linestyle='-.', linewidth=2, label="Latent Space")
-        
-        axes[i].set_title(f"{stat}\nBayesian p-value: {p_value:.3f}", fontsize=15)
-        axes[i].legend()
+        for i, stat in enumerate(selected_stats):
+            values = np.array(stats_df[stat])
+            real_value = real_stats[stat] if stat != "Modularity" else real_modularity
+            mean_val = np.nanmean(values)
+            q_low, q_high = np.nanquantile(values, [0.025, 0.975])
+            p_value = np.nanmean(values >= real_value)
 
-    plt.suptitle("Posterior Predictive Checking", fontsize=30)
-    plt.tight_layout()
-    plt.show()
+            sns.histplot(values, bins=30, color="gray", edgecolor="white", stat='density', ax=axes[i])
+            axes[i].axvline(q_low, color='red', linestyle=':', linewidth=1)
+            axes[i].axvline(q_high, color='red', linestyle=':', linewidth=1)
+            axes[i].axvline(mean_val, color='blue', linestyle='--', linewidth=1)
+            if stat != "Modularity":
+                axes[i].axvline(real_value, color='black', linewidth=2, label="Observed")
+            else:
+                axes[i].axvline(real_value, color='black', linewidth=2, label="Inferred: Greedy")
+                axes[i].axvline(latent_modularity, color='black', linestyle='-.', linewidth=2, label="Inferred: Latent space")
+            
+            axes[i].set_title(f"{stat}\nBayesian p-value: {p_value:.3f}", fontsize=15)
+            axes[i].legend()
+
+        plt.suptitle("Posterior Predictive Checking", fontsize=30)
+        plt.tight_layout()
+        plt.show()
 
     # Optional pairwise sociomatrix plot
     if plot_pairwise:
         pairwise_sociomatrix_plot(results, Model)
+
+    # Optional information 
+    if dictionary_info:
+        summary_stats = {}
+        for stat in selected_stats:
+            values = np.array(stats_df[stat])
+            values_clean = values[~np.isnan(values)]
+            if stat == "Modularity":
+                real_value = real_modularity
+            else:
+                real_value = real_stats[stat]
+
+            summary_stats[stat] = {
+                'mean': np.mean(values_clean),
+                'median': np.median(values_clean),
+                'q025': np.quantile(values_clean, 0.025),
+                'q975': np.quantile(values_clean, 0.975),
+                'p_value': np.mean(values_clean >= real_value)
+            }
+
+        return summary_stats
+
+    
 
 def pairwise_sociomatrix_plot(results, Model):
     samples_Z = results['samples']['Z']
@@ -1327,7 +1361,7 @@ def pairwise_sociomatrix_plot(results, Model):
             for j in range(n):
                 if i != j:
                     if Model == "Euclidean":
-                        dist = 0.5 * np.linalg.norm(samples_Z[l, i] - samples_Z[l, j])**2
+                        dist = np.linalg.norm(samples_Z[l, i] - samples_Z[l, j])
                         eta = samples_alpha[l] - dist
                     else:
                         dot = np.dot(samples_Z[l, i], samples_Z[l, j])
@@ -1381,7 +1415,7 @@ def prior_predictive_check(results):
     Perform prior predictive check for both Euclidean and Spherical models.
 
     Arguments:
-        results: dict, output from MH algorithm
+        results: dict, output from estimation algorithm
     """
     Model = results['Model']
     Theta = results['inputs']['Theta']
@@ -1403,9 +1437,12 @@ def prior_predictive_check(results):
         for sample in range(n_samples):
             for i in range(n):
                 samples_Z[sample, i, :] = random_VMF(np.eye(d)[0,:] , 0.0)
-        samples_alpha = sigma_prior_alpha * np.random.randn(n_samples)
+        rho = -0.5
+        mu_alpha_beta = np.array([0.0,5.0])
         sigma_prior_beta = Theta['sigma_prior_beta']
-        samples_beta = sigma_prior_beta * np.random.randn(n_samples) + 1.0
+        samples_alpha_beta = np.random.multivariate_normal(mu_alpha_beta , np.array([[sigma_prior_alpha**2,rho*sigma_prior_alpha*sigma_prior_beta],[rho*sigma_prior_alpha*sigma_prior_beta,sigma_prior_beta**2]]), size=n_samples)
+        samples_alpha = samples_alpha_beta[:, 0]
+        samples_beta = samples_alpha_beta[:, 1]
     else:
         raise ValueError("Unknown model type.")
 
@@ -1416,8 +1453,8 @@ def prior_predictive_check(results):
             for j in range(n):
                 if i != j:
                     if Model == "Euclidean":
-                        dist_sq = np.linalg.norm(samples_Z[l, i] - samples_Z[l, j])**2
-                        eta = samples_alpha[l] - 0.5 * dist_sq
+                        dist_sq = np.linalg.norm(samples_Z[l, i] - samples_Z[l, j])
+                        eta = samples_alpha[l] - dist_sq
                     elif Model == "Spherical":
                         inner = np.dot(samples_Z[l, i], samples_Z[l, j])
                         eta = samples_alpha[l] + samples_beta[l] * inner
@@ -1503,7 +1540,7 @@ def prediction_evaluation(results, threshold=0.5, plot=True, verbose=True):
             for j in range(n):
                 if i != j:
                     if samples_beta is None:  # Euclidean
-                        dist = 0.5 * np.linalg.norm(samples_Z[l, i] - samples_Z[l, j])**2
+                        dist = np.linalg.norm(samples_Z[l, i] - samples_Z[l, j])
                         eta = samples_alpha[l] - dist
                     else:  # Spherical
                         dot = np.dot(samples_Z[l, i], samples_Z[l, j])
@@ -1580,7 +1617,7 @@ def prediction_evaluation(results, threshold=0.5, plot=True, verbose=True):
 
 import pandas as pd
 
-def model_comparison_engine(results_dict):
+def model_comparison(results_dict):
     """
     Receives a dictionary of results from different models and returns a comparison dataframe.
     """
@@ -1592,12 +1629,14 @@ def model_comparison_engine(results_dict):
         trace_diag = res['trace_convergence']
         metrics = prediction_evaluation(res, plot=False, verbose=False)  
         confussion_matrix = metrics['confusion_matrix'] 
+        ppc = posterior_predictive_check(res, plot_statistics=False, plot_pairwise=False, dictionary_info=True)
         
         row = {
             'Model': model_name,
             'WAIC': info_criteria['WAIC'],
             'DIC': info_criteria['DIC'],
             'BIC': info_criteria['BIC'],
+            'mean_log_likelihood' : np.mean(res['log_likelihood']),
             'Min_Rhat': trace_diag['R_hat'].min(),
             'Max_Rhat': trace_diag['R_hat'].max(),
             'Min_ESSn': trace_diag['ESS/n'].min(),
@@ -1611,7 +1650,15 @@ def model_comparison_engine(results_dict):
             'True positive': confussion_matrix['tp'],
             'True negative': confussion_matrix['tn'],
             'False positive': confussion_matrix['fp'],
-            'False negative': confussion_matrix['fn']
+            'False negative': confussion_matrix['fn'],
+            'p_value_density': ppc['Density']['p_value'],
+            'p_value_transitivity': ppc['Transitivity']['p_value'],
+            'p_value_assortativity': ppc['Assortativity']['p_value'],
+            'p_value_average_degree': ppc['Average Degree']['p_value'],
+            'p_value_degree_sd': ppc['Degree SD']['p_value'],
+            'p_value_average_path_length': ppc['Average Path Length']['p_value'],
+            'p_value_diameter': ppc['Diameter']['p_value'],
+            'p_value_modularity': ppc['Modularity']['p_value']
         }
         
         rows.append(row)
