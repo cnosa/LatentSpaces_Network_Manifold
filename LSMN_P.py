@@ -14,7 +14,7 @@ np.random.seed(42)
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning, message="use_inf_as_na option is deprecated")
 warnings.filterwarnings("ignore", category=UserWarning, message="KMeans is known to have a memory leak on Windows with MKL")
-warnings.filterwarnings("ignore", category=RuntimeWarning, message="RuntimeWarning: invalid value encountered in scalar divide return (xy * (M - ab)).sum() / np.sqrt(vara * varb)")
+warnings.filterwarnings("ignore", category=RuntimeWarning)
 #############################################################################
 #############################################################################
 #############################################################################
