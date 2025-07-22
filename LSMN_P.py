@@ -319,11 +319,12 @@ def Estimation_LSMN(Y, Theta, Model):
     Z0 = Theta['Z0']
     alpha0 = Theta['alpha0']
     if Model == "Spherical": beta0 = Theta['beta0']
-    sigma_prior_Z = Theta['sigma_prior_Z']
+    if Model == "Euclidean": sigma_prior_Z = Theta['sigma_prior_Z']
     sigma_prior_alpha = Theta['sigma_prior_alpha']
-    if Model == "Spherical": sigma_prior_beta = Theta['sigma_prior_beta']
-    rho = -0.5
-    mu_alpha_beta = np.array([0.0,5.0])
+    if Model == "Spherical": 
+        sigma_prior_beta = Theta['sigma_prior_beta']
+        rho = Theta['rho'] 
+        mu_alpha_beta = Theta['mu_alpha_beta'] 
 
     d = Z0.shape[1]
 
@@ -491,8 +492,8 @@ def Estimation_LSMN(Y, Theta, Model):
 
         for s in range(n_starts):
             # Random initialization
-            Z0 = sigma_prior_Z * np.random.randn(n, d)
-            Z0 = Z0 / np.linalg.norm(Z0, axis=1, keepdims=True) if Model == "Spherical" else Z0
+            Z0 = np.random.randn(n, d)
+            Z0 = Z0 / np.linalg.norm(Z0, axis=1, keepdims=True) if Model == "Spherical" else sigma_prior_Z * Z0
             alpha0 = sigma_prior_alpha * np.random.normal()
             if Model == "Spherical":
                 alpha_beta_0 = np.random.multivariate_normal(mu_alpha_beta , np.array([[sigma_prior_alpha**2,rho*sigma_prior_alpha*sigma_prior_beta],[rho*sigma_prior_alpha*sigma_prior_beta,sigma_prior_beta**2]]), size=1)
@@ -522,7 +523,7 @@ def Estimation_LSMN(Y, Theta, Model):
     print("-"*60)    
 
     print("Log-prior:")
-    print("sigma_prior_Z: ", sigma_prior_Z)
+    if Model == "Euclidean": print("sigma_prior_Z: ", sigma_prior_Z)
     print("sigma_prior_alpha: ", sigma_prior_alpha)
     if Model == "Spherical": print("sigma_prior_beta: ", sigma_prior_beta)
     
@@ -1424,7 +1425,7 @@ def prior_predictive_check(results):
     n = Y.shape[0]
     d = Theta['Z0'].shape[1]
 
-    sigma_prior_Z = Theta['sigma_prior_Z']
+    if Model == "Euclidean": sigma_prior_Z = Theta['sigma_prior_Z']
     sigma_prior_alpha = Theta['sigma_prior_alpha']
 
     # Sample from priors
