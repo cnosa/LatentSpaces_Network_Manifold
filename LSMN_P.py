@@ -535,7 +535,7 @@ def Estimation_LSMN(Y, Theta, Model):
             total += - 0.5 * np.log(2 * np.pi)- np.log(sigma_prior_alpha) - 0.5 * alpha**2 / sigma_prior_alpha**2
         if Model == "Spherical":
             Z, alpha, beta = params
-            total += - 0.5 * n * d * np.log(2 * np.pi) + n * np.log(scipy.special.gamma(d/2))
+            total += - 0.5 * n * d * np.log(np.pi) - n * np.log(d) + n * np.log(scipy.special.gamma(d/2 + 1))
             Sigma_prior_inv = (1/(sigma_prior_alpha**2 * sigma_prior_beta**2 * (1 - rho**2))) * np.array([[sigma_prior_beta**2,-rho*sigma_prior_alpha*sigma_prior_beta],[-rho*sigma_prior_alpha*sigma_prior_beta,sigma_prior_alpha**2]])
             total += - np.log(2 * np.pi)- np.log(sigma_prior_alpha*sigma_prior_beta*np.sqrt(1-rho**2)) - 0.5 * ((np.array([alpha, beta]) - mu_alpha_beta).T @ Sigma_prior_inv @ (np.array([alpha, beta]) - mu_alpha_beta))
         return total

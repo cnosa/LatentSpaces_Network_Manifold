@@ -310,10 +310,10 @@ def compute_model_criteria(Y, samples_Z, samples_alpha, samples_beta=None):
 
 def Estimation_LSMN(Y, Theta, Model):
     print("="*80)   
-    print(f"Metropolis-Hastings for {Model} latent space models on networks")
+    print(f"Hamiltonian Monte Carlo for {Model} latent space models on networks")
     print("="*80)
 
-    min_ar, max_ar = 0.3, 0.5
+    min_ar, max_ar = 0.6, 0.8
     
     n = Y.shape[0]
     Z0 = Theta['Z0']
@@ -340,7 +340,7 @@ def Estimation_LSMN(Y, Theta, Model):
     mask = np.arange(burn_in, n_iterations, thin)
 
     print(f"Number of chains: {n_chains}")
-    print(f"MH samples of size {n_samples} with burn-in {burn_in} and thinning {thin}")
+    print(f"Samples of size {n_samples} with burn-in {burn_in} and thinning {thin}")
     print(f"Number of draws per chain: {n_iterations}")
     
 
@@ -516,9 +516,9 @@ def Estimation_LSMN(Y, Theta, Model):
 
 
     if Model == "Euclidean":
-        Z_ML, alpha_ML = MultiStartMLE(n_starts=20)
+        Z_ML, alpha_ML = MultiStartMLE(n_starts=5)
     if Model == "Spherical":
-        Z_ML, alpha_ML, beta_ML = MultiStartMLE(n_starts=20) 
+        Z_ML, alpha_ML, beta_ML = MultiStartMLE(n_starts=5) 
         
     print("-"*60)    
 
@@ -535,14 +535,97 @@ def Estimation_LSMN(Y, Theta, Model):
             total += - 0.5 * np.log(2 * np.pi)- np.log(sigma_prior_alpha) - 0.5 * alpha**2 / sigma_prior_alpha**2
         if Model == "Spherical":
             Z, alpha, beta = params
-            total += - 0.5 * n * d * np.log(2 * np.pi) + n * np.log(scipy.special.gamma(d/2))
+            total += - 0.5 * n * d * np.log(np.pi) - n * np.log(d) + n * np.log(scipy.special.gamma(d/2 + 1))
             Sigma_prior_inv = (1/(sigma_prior_alpha**2 * sigma_prior_beta**2 * (1 - rho**2))) * np.array([[sigma_prior_beta**2,-rho*sigma_prior_alpha*sigma_prior_beta],[-rho*sigma_prior_alpha*sigma_prior_beta,sigma_prior_alpha**2]])
             total += - np.log(2 * np.pi)- np.log(sigma_prior_alpha*sigma_prior_beta*np.sqrt(1-rho**2)) - 0.5 * ((np.array([alpha, beta]) - mu_alpha_beta).T @ Sigma_prior_inv @ (np.array([alpha, beta]) - mu_alpha_beta))
         return total
     
+
+    
+    def grad_log_Z_i(i,params):
+        if Model == "Euclidean":
+            Z, alpha = params
+            grad_likelihood_Z_i = np.zeros(Z.shape[1])
+            for j in range(i+1,n):
+                dist = np.linalg.norm(Z[i] - Z[j])
+                eta = alpha - dist
+                grad_likelihood_Z_i += (-1) * ((Z[i] - Z[j])/(dist + 1e-10)) * (Y[i,j] - expit(eta))
+            grad_prior_Z_i = (-1) * Z[i]  / sigma_prior_Z**2
+            grad_total_Z_i = (-1) * (grad_likelihood_Z_i + grad_prior_Z_i)
+            return  grad_total_Z_i
+        if Model == "Spherical":
+            Z, alpha, beta = params
+            grad_likelihood_Z_i = np.zeros(Z.shape[1])
+            for i in range(n):
+                for j in range(i+1,n):
+                    dist = Z[i].T @ Z[j] 
+                    eta = alpha + beta*dist
+                    grad_likelihood_Z_i +=  (Y[i,j] - expit(eta)) *  (beta * Z[j])
+            grad_prior_Z_i = np.zeros(Z.shape[1])
+            grad_total_Z_i = (-1) * (grad_likelihood_Z_i + grad_prior_Z_i)
+            return grad_total_Z_i
+
+
+    def grad_log_alpha(params):
+        grad_likelihood_alpha = 0.0
+        if Model == "Euclidean":
+            Z, alpha = params
+            for i in range(n):
+                for j in range(i+1,n):
+                    dist = np.linalg.norm(Z[i] - Z[j])
+                    eta = alpha - dist
+                    grad_likelihood_alpha +=  (Y[i,j] - expit(eta))
+            grad_prior_alpha = (-1) * alpha / sigma_prior_alpha**2
+            grad_total_alpha = (-1) * (grad_likelihood_alpha + grad_prior_alpha)
+            return grad_total_alpha
+        if Model == "Spherical":
+            Z, alpha, beta = params
+            for i in range(n):
+                for j in range(i+1,n):
+                    dist = Z[i].T @ Z[j] 
+                    eta = alpha + beta * dist
+                    grad_likelihood_alpha += (Y[i,j] - expit(eta)) * (1) 
+            grad_prior_alpha = (-1) * alpha / sigma_prior_alpha**2
+            grad_total_alpha = (-1) * (grad_likelihood_alpha + grad_prior_alpha)
+            return grad_total_alpha
+    
+    if Model == "Spherical":
+        def grad_log_beta(params):
+            grad_likelihood_beta = 0.0
+            Z, alpha, beta = params
+            for i in range(n):
+                for j in range(i+1,n):
+                    dist = Z[i].T @ Z[j] 
+                    eta = alpha + beta * dist
+                    grad_likelihood_beta += (Y[i,j] - expit(eta)) * (dist) 
+            grad_prior_beta = (-1) * (beta - mu_alpha_beta[1]) / sigma_prior_beta**2
+            grad_total_beta = (-1) * (grad_likelihood_beta + grad_prior_beta)
+            return grad_total_beta
+        
+        def project_to_tangent_space(theta, phi):
+            return phi - np.dot(phi, theta) * theta
+        
+        def geodesic_flow(theta, phi, step_size):
+            nu = np.linalg.norm(phi)
+            if nu > 1e-10:
+                new_theta = theta * np.cos(nu * step_size) + (phi / nu) * np.sin(nu * step_size)
+                new_phi = phi * np.cos(nu * step_size) - nu * theta * np.sin(nu * step_size)
+            else:
+                new_theta, new_phi = theta, phi  
+            return new_theta, new_phi
+
     results_per_chain = []
 
     for chain in range(n_chains):
+
+        epsilon_Z = Theta['epsilon_Z']
+        L_Z = max(1, int(round(1/epsilon_Z)))
+        epsilon_alpha = Theta['epsilon_alpha']
+        L_alpha = max(1, int(round(1/epsilon_alpha)))
+        if Model == "Spherical": 
+            epsilon_beta = Theta['epsilon_beta']
+            L_beta = max(1, int(round(1/epsilon_beta)))
+
 
         sigma_q_Z = Theta['sigma_q_Z']
         sigma_q_alpha = Theta['sigma_q_alpha']
@@ -597,18 +680,37 @@ def Estimation_LSMN(Y, Theta, Model):
             for l in range(n):
                 if Model == "Euclidean":
                     Z_proposed = Z_current.copy()
-                    Z_proposed[l] =  np.random.normal(Z_current[l], sigma_q_Z, d)
-                    proposed_params = (Z_proposed, alpha_current)
-                    proposed_ll = log_likelihood(proposed_params)
-                    proposed_lp = log_prior(proposed_params)
+                    current_p_l = np.random.normal(0, sigma_q_Z, size=Z_current.shape[1])
+                    proposed_p_l = current_p_l.copy()
+                    # Leapfrog integration
+                    for _ in range(L_Z):
+                        proposed_p_l += 0.5 * epsilon_Z * grad_log_Z_i(l, (Z_proposed, alpha_current))
+                        Z_proposed[l,:] += epsilon_Z * proposed_p_l / sigma_q_Z**2
+                        proposed_p_l += 0.5 * epsilon_Z * grad_log_Z_i(l, (Z_proposed, alpha_current))
+                    # Hamiltonian
+                    proposed_ll = log_likelihood((Z_proposed, alpha_current))
+                    proposed_lp = log_prior((Z_proposed, alpha_current))
+                    H_current = - log_likelihood((Z_current, alpha_current)) - log_prior((Z_current, alpha_current)) + 0.5 * np.sum(current_p_l**2) / sigma_q_Z**2
+                    H_proposed = - proposed_ll - proposed_lp + 0.5 * np.sum(proposed_p_l**2) / sigma_q_Z**2
                 if Model == "Spherical":
                     Z_proposed = Z_current.copy()
-                    Z_proposed[l] =  random_VMF(Z_current[l], sigma_q_Z, size=1)[0]
-                    proposed_params = (Z_proposed, alpha_current, beta_current)
-                    proposed_ll = log_likelihood(proposed_params)
-                    proposed_lp = log_prior(proposed_params)
+                    current_p_l = np.random.normal(0, sigma_q_Z, size=Z_current.shape[1])
+                    current_p_l = project_to_tangent_space(Z_proposed[l,:], current_p_l)
+                    proposed_p_l = current_p_l.copy()
+                    # Leapfrog integration
+                    for _ in range(L_Z):
+                        proposed_p_l += 0.5 * epsilon_Z * grad_log_Z_i(l, (Z_proposed, alpha_current))
+                        proposed_p_l = project_to_tangent_space(Z_proposed[l,:], proposed_p_l)
+                        Z_proposed[l,:] , proposed_p_l = geodesic_flow(Z_proposed[l,:], proposed_p_l, epsilon_Z)
+                        proposed_p_l += 0.5 * epsilon_Z * grad_log_Z_i(l, (Z_proposed, alpha_current))
+                        proposed_p_l = project_to_tangent_space(Z_proposed[l,:], proposed_p_l)
+                    # Hamiltonian
+                    proposed_ll = log_likelihood((Z_proposed, alpha_current, beta_current))
+                    proposed_lp = log_prior((Z_proposed, alpha_current, beta_current))
+                    H_current = - log_likelihood((Z_current, alpha_current, beta_current)) - log_prior((Z_current, alpha_current, beta_current)) + 0.5 * np.sum(current_p_l**2) / sigma_q_Z**2
+                    H_proposed = - proposed_ll - proposed_lp + 0.5 * np.sum(proposed_p_l**2) / sigma_q_Z**2
                 proposed_post = proposed_ll + proposed_lp
-                log_r = proposed_post - current_post
+                log_r = H_current - H_proposed
                 if np.log(np.random.rand()) < log_r:
                     Z_current = Z_proposed 
                     current_ll = proposed_ll
@@ -622,16 +724,27 @@ def Estimation_LSMN(Y, Theta, Model):
 
             # alpha update
             alpha_proposed =  np.random.normal(alpha_current, sigma_q_alpha)
+            current_p_alpha = np.random.normal(0, sigma_q_alpha)
+            proposed_p_alpha = current_p_alpha
+            # Leapfrog integration
+            for _ in range(L_alpha):
+                proposed_p_alpha += 0.5 * epsilon_alpha * grad_log_alpha((Z_current, alpha_proposed))
+                alpha_proposed += epsilon_alpha * proposed_p_alpha / sigma_q_alpha**2
+                proposed_p_alpha += 0.5 * epsilon_alpha * grad_log_alpha((Z_current, alpha_proposed))
+
             if Model == "Euclidean":
                     proposed_params = (Z_current, alpha_proposed)
                     proposed_ll = log_likelihood(proposed_params)
                     proposed_lp = log_prior(proposed_params)
+                    H_current = - log_likelihood((Z_current, alpha_current)) - log_prior((Z_current, alpha_current)) + 0.5 * np.sum(current_p_alpha**2) / sigma_q_alpha**2
             if Model == "Spherical":
                 proposed_params = (Z_current, alpha_proposed, beta_current)
                 proposed_ll = log_likelihood(proposed_params)
                 proposed_lp = log_prior(proposed_params)
+                H_current = - log_likelihood((Z_current, alpha_current, beta_current)) - log_prior((Z_current, alpha_current, beta_current)) + 0.5 * np.sum(current_p_alpha**2) / sigma_q_alpha**2
+            H_proposed = - proposed_ll - proposed_lp + 0.5 * np.sum(proposed_p_alpha**2) / sigma_q_alpha**2
             proposed_post = proposed_ll + proposed_lp
-            log_r = proposed_post - current_post
+            log_r = H_current - H_proposed
             if np.log(np.random.rand()) < log_r:
                 alpha_current = alpha_proposed
                 current_ll = proposed_ll
@@ -646,10 +759,19 @@ def Estimation_LSMN(Y, Theta, Model):
             if Model == "Spherical":
                 # beta update
                 beta_proposed =  np.random.normal(beta_current, sigma_q_beta)
+                current_p_beta = np.random.normal(0, sigma_q_beta)
+                proposed_p_beta = current_p_beta
+                # Leapfrog integration
+                for _ in range(L_beta):
+                    proposed_p_beta += 0.5 * epsilon_beta * grad_log_beta((Z_current, alpha_current, beta_proposed))
+                    beta_proposed += epsilon_beta * proposed_p_beta / sigma_q_beta**2
+                    proposed_p_beta += 0.5 * epsilon_beta * grad_log_beta((Z_current, alpha_current, beta_proposed))
                 proposed_ll = log_likelihood((Z_current, alpha_current, beta_proposed))
                 proposed_lp = log_prior((Z_current, alpha_current, beta_proposed))
+                H_current = - log_likelihood((Z_current, alpha_current, beta_current)) - log_prior((Z_current, alpha_current, beta_current)) + 0.5 * np.sum(current_p_beta**2) / sigma_q_beta**2
+                H_proposed = - proposed_ll - proposed_lp + 0.5 * np.sum(proposed_p_beta**2) / sigma_q_beta**2
                 proposed_post = proposed_ll + proposed_lp
-                log_r = proposed_post - current_post  
+                log_r = H_current - H_proposed  
                 if np.log(np.random.rand()) < log_r:
                     beta_current = beta_proposed
                     current_ll = proposed_ll
@@ -670,29 +792,32 @@ def Estimation_LSMN(Y, Theta, Model):
 
             # Tunning proposals
             if 0 < i < burn_in:
-                if Model == "Euclidean":
-                    acc_rate_Z = acceptance_rate_trace_Z[i]
-                    acc_rate_alpha = acceptance_rate_trace_alpha[i]
-                    factor_Z = 0.995 if acc_rate_Z < min_ar else 1.005 if acc_rate_Z > max_ar else 1.0
-                    sigma_q_Z = np.minimum(np.maximum(sigma_q_Z * factor_Z, 0.001), 3.0)
-                    factor_alpha = 0.995 if acc_rate_alpha < min_ar else 1.005 if acc_rate_alpha > max_ar else 1.0
-                    sigma_q_alpha = np.minimum(np.maximum(sigma_q_alpha * factor_alpha, 0.001), 3.0)
+
+                acc_rate_Z = acceptance_rate_trace_Z[i]
+                
+                factor_Z = -0.005 if acc_rate_Z < min_ar else 0.005 if acc_rate_Z > max_ar else 0.0
+                sigma_q_Z = np.minimum(np.maximum(sigma_q_Z * (1 - factor_Z), 0.001), 3.0)
+                epsilon_Z = np.minimum(np.maximum(epsilon_Z * (1 + 0.1*factor_Z), 0.01), 1.0)
+                L_Z = max(1, int(round(1 / epsilon_Z)))
+
+                acc_rate_alpha = acceptance_rate_trace_alpha[i]
+                factor_alpha = -0.005 if acc_rate_alpha < min_ar else 0.005 if acc_rate_alpha > max_ar else 0.0
+                sigma_q_alpha = np.minimum(np.maximum(sigma_q_alpha * (1 + factor_alpha), 0.001), 3.0)
+                epsilon_alpha = np.minimum(np.maximum(epsilon_alpha * (1 + 0.1*factor_alpha), 0.01), 1.0)
+                L_alpha = max(1, int(round(1 / epsilon_alpha)))
+
                 if Model == "Spherical":
-                    acc_rate_Z = acceptance_rate_trace_Z[i]
-                    acc_rate_alpha = acceptance_rate_trace_alpha[i]
                     acc_rate_beta = acceptance_rate_trace_beta[i]
-                    factor_Z = 1.0005 if acc_rate_Z < min_ar else 0.9995 if acc_rate_Z > max_ar else 0.0
-                    sigma_q_Z = np.minimum(np.maximum(sigma_q_Z * factor_Z, 1.0), 300.0)
-                    factor_alpha = 0.995 if acc_rate_alpha < min_ar else 1.005 if acc_rate_alpha > max_ar else 1.0
-                    sigma_q_alpha = np.minimum(np.maximum(sigma_q_alpha * factor_alpha, 0.001), 3.0)
-                    factor_beta = 0.995 if acc_rate_beta < min_ar else 1.005 if acc_rate_beta > max_ar else 1.0
-                    sigma_q_beta = np.minimum(np.maximum(sigma_q_beta * factor_beta, 0.001), 3.0)
+                    factor_beta = -0.005 if acc_rate_beta < min_ar else 0.005 if acc_rate_beta > max_ar else 0.0
+                    sigma_q_beta = np.minimum(np.maximum(sigma_q_beta * (1 + factor_beta), 0.001), 3.0)
+                    epsilon_beta = np.minimum(np.maximum(epsilon_beta * (1 + 0.1*factor_beta), 0.01), 1.0)
+                    L_beta = max(1, int(round(1 / epsilon_beta)))
                 
             if i == burn_in:
                 print("-"*32 + "\nTuning complete\n" + "-"*32)
-                print(f"Final sigma_q_Z: {sigma_q_Z:.4f}")
-                print(f"Final sigma_q_alpha: {sigma_q_alpha:.4f}")
-                if Model == "Spherical": print(f"Final sigma_q_beta: {sigma_q_beta:.4f}")
+                print(f"Final sigma_q_Z: {sigma_q_Z:.4f}. Final epsilon_Z: {epsilon_Z:.4f}. Final L_Z: {L_Z}")
+                print(f"Final sigma_q_alpha: {sigma_q_alpha:.4f}. Final epsilon_alpha: {epsilon_alpha:.4f}. Final L_alpha: {L_alpha}")
+                if Model == "Spherical": print(f"Final sigma_q_beta: {sigma_q_beta:.4f}. Final epsilon_beta: {epsilon_beta:.4f}. Final L_beta: {L_beta}")
         if Model == "Euclidean":
             results =  {
                 'samples': {'Z': Z_chain[mask], "alpha": alpha_chain[mask]},
@@ -909,8 +1034,8 @@ def plot_mcmc_diagnostics_panel(results):
             axes[i].axhline(np.mean(series[1]), color='lightblue',alpha=0.2, linestyle='--', label='Mean - alpha')
             if Model == 'Spherical':
                 axes[i].axhline(np.mean(series[2]), color='purple',alpha=0.2, linestyle='--', label='Mean - beta')
-            axes[i].axhline(0.30, color='red', linestyle=':', linewidth=1, label='Target range')
-            axes[i].axhline(0.50, color='red', linestyle=':', linewidth=1)
+            axes[i].axhline(0.60, color='red', linestyle=':', linewidth=1, label='Target range')
+            axes[i].axhline(0.80, color='red', linestyle=':', linewidth=1)
             axes[i].set_ylim(-0.01, 1.01)
         else:
             iterations = np.arange(1, len(series) + 1)
