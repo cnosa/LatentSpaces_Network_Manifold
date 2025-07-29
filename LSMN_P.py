@@ -681,8 +681,8 @@ def Estimation_LSMN(Y, Theta, Model):
                     acc_rate_Z = acceptance_rate_trace_Z[i]
                     acc_rate_alpha = acceptance_rate_trace_alpha[i]
                     acc_rate_beta = acceptance_rate_trace_beta[i]
-                    factor_Z = 1.0005 if acc_rate_Z < min_ar else 0.9995 if acc_rate_Z > max_ar else 0.0
-                    sigma_q_Z = np.minimum(np.maximum(sigma_q_Z * factor_Z, 1.0), 300.0)
+                    factor_Z = 1.0005 if acc_rate_Z < min_ar else 0.9995 if acc_rate_Z > max_ar else 1.0
+                    sigma_q_Z = np.minimum(np.maximum(sigma_q_Z * factor_Z, 0.1), 100.0)
                     factor_alpha = 0.995 if acc_rate_alpha < min_ar else 1.005 if acc_rate_alpha > max_ar else 1.0
                     sigma_q_alpha = np.minimum(np.maximum(sigma_q_alpha * factor_alpha, 0.001), 3.0)
                     factor_beta = 0.995 if acc_rate_beta < min_ar else 1.005 if acc_rate_beta > max_ar else 1.0
