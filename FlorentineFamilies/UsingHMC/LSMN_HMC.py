@@ -694,7 +694,7 @@ def Estimation_LSMN(Y, Theta, Model):
                     H_proposed = - proposed_ll - proposed_lp + 0.5 * np.sum(proposed_p_l**2) / sigma_q_Z**2
                 if Model == "Spherical":
                     Z_proposed = Z_current.copy()
-                    current_p_l = np.random.normal(0, sigma_q_Z, size=Z_current.shape[1])
+                    current_p_l = np.random.normal(0, 1, size=Z_current.shape[1])
                     current_p_l = project_to_tangent_space(Z_proposed[l,:], current_p_l)
                     proposed_p_l = current_p_l.copy()
                     # Leapfrog integration
@@ -707,8 +707,8 @@ def Estimation_LSMN(Y, Theta, Model):
                     # Hamiltonian
                     proposed_ll = log_likelihood((Z_proposed, alpha_current, beta_current))
                     proposed_lp = log_prior((Z_proposed, alpha_current, beta_current))
-                    H_current = - log_likelihood((Z_current, alpha_current, beta_current)) - log_prior((Z_current, alpha_current, beta_current)) + 0.5 * np.sum(current_p_l**2) / sigma_q_Z**2
-                    H_proposed = - proposed_ll - proposed_lp + 0.5 * np.sum(proposed_p_l**2) / sigma_q_Z**2
+                    H_current = - log_likelihood((Z_current, alpha_current, beta_current)) - log_prior((Z_current, alpha_current, beta_current)) + 0.5 * np.sum(current_p_l**2) 
+                    H_proposed = - proposed_ll - proposed_lp + 0.5 * np.sum(proposed_p_l**2) 
                 proposed_post = proposed_ll + proposed_lp
                 log_r = H_current - H_proposed
                 if np.log(np.random.rand()) < log_r:

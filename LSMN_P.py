@@ -1018,7 +1018,7 @@ import plotly.express as px
 import plotly.graph_objects as go
 import matplotlib.ticker as ticker
 
-def plot_latent_space(results, L = 2500):
+def plot_latent_space(results, L = 1500):
     """
     Visualize latent space for Euclidean and Spherical models in R^2, R^3, S^1 or S^2.
 
@@ -1029,64 +1029,62 @@ def plot_latent_space(results, L = 2500):
     Model = results['Model']
     d = samples_Z.shape[2]
     n = samples_Z.shape[1]
+    colors = sns.color_palette("tab20", n)
 
     # Case: Euclidean R^2
     if Model == "Euclidean" and d == 2:
+        A = results['inputs']['Y']
         num_samples = samples_Z.shape[0]
-        palette = sns.color_palette("hls", n)
-        fig, axes = plt.subplots(1, 2, figsize=(14, 6))
+        fig, ax = plt.subplots(figsize=(9, 9))
         centers = []
 
         for i in range(n):
             trace = samples_Z[:, i, :]
             mean_point = trace.mean(axis=0)
             centers.append(mean_point)
-            sns.scatterplot(
-                ax=axes[0],
-                x=trace[:, 0],
-                y=trace[:, 1],
-                color=palette[i],
-                alpha=0.1,
+
+            ax.scatter(
+                trace[:, 0],
+                trace[:, 1],
+                color=colors[i],
+                alpha=0.075,
                 s=20
             )
-            sns.scatterplot(
-                ax=axes[0],
-                x=[mean_point[0]],
-                y=[mean_point[1]],
-                color=palette[i],
-                marker='X',
-                s=150,
-                edgecolor='black',
-                linewidth=0.5,
-                label=f"{i}"
-            )
-            axes[1].scatter(
+            ax.text(
                 mean_point[0],
                 mean_point[1],
-                color=palette[i],
-                s=150,
-                marker='X',
-                edgecolor='black',
-                linewidth=0.5
-            )
-            axes[1].text(
-                mean_point[0] + 0.1,
-                mean_point[1] + 0.001,
                 f"{i}",
-                fontsize=9
+                fontsize=9,
+                ha='center',
+                va='center',
+                weight='bold',
+                color='black',
+                bbox=dict(facecolor='white', alpha=0.7, edgecolor='none', boxstyle='round,pad=0.2')
             )
 
-        axes[0].set_title("Samples and Centers")
-        axes[0].legend(loc="best", fontsize="small")
-        axes[0].grid(True)
-        axes[1].set_title("Centers Only")
-        axes[1].grid(True)
-        plt.suptitle("Latent Space in R²", fontsize=18)
+
+        centers = np.array(centers)
+        for i in range(n):
+            for j in range(i + 1, n):
+                if A[i, j] == 1:
+                    ax.plot(
+                        [centers[i, 0], centers[j, 0]],
+                        [centers[i, 1], centers[j, 1]],
+                        color='black',
+                        linewidth=2.0,
+                        alpha=0.9,
+                        zorder=0
+                    )
+
+        ax.set_title("Latent space in R2", fontsize=16)
+        ax.grid(False)
+        ax.set_aspect('equal', 'box')
         plt.tight_layout()
         plt.show()
 
     # Case: Euclidean R^3 or Spherical S^2
     elif (Model == "Euclidean" and d == 3) or (Model == "Spherical" and d == 3):
+        A = results['inputs']['Y'] 
         num_samples = samples_Z.shape[0]
         all_points = samples_Z.reshape(-1, 3)
         point_ids = np.tile(np.arange(n), num_samples)
@@ -1098,17 +1096,37 @@ def plot_latent_space(results, L = 2500):
         df_centers = pd.DataFrame(centers, columns=["x", "y", "z"])
         df_centers["point_id"] = [str(i) for i in range(n)]
 
+        from matplotlib.colors import to_hex 
+
         fig = px.scatter_3d(
             df, x="x", y="y", z="z", color="point_id",
-            opacity=0.1, hover_data=["point_id", "sample_id"]
+            color_discrete_sequence=[to_hex(c) for c in colors],
+            opacity=0.025, hover_data=["point_id", "sample_id"]
         )
         fig.add_scatter3d(
             x=df_centers["x"], y=df_centers["y"], z=df_centers["z"],
-            mode="markers+text", marker=dict(size=6, color='black', symbol="x"),
-            text=df_centers["point_id"], textposition="top center", name="Centers"
+            mode="markers+text",
+            marker=dict(size=6, color='black', symbol="x"),
+            text=df_centers["point_id"],
+            textposition="top center",
+            name="Centers"
         )
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                if A[i, j] == 1:
+                    fig.add_trace(go.Scatter3d(
+                        x=[df_centers.loc[i, "x"], df_centers.loc[j, "x"]],
+                        y=[df_centers.loc[i, "y"], df_centers.loc[j, "y"]],
+                        z=[df_centers.loc[i, "z"], df_centers.loc[j, "z"]],
+                        mode="lines",
+                        line=dict(color="black", width=3),
+                        hoverinfo='skip',
+                        showlegend=False
+                    ))
+
         fig.update_layout(
-            title="Latent Space in 3D",
+            title=r"Latent space on R3" if Model == "Euclidean" else r"Latent space on S2",
             scene=dict(
                 xaxis_title="Dim 1",
                 yaxis_title="Dim 2",
@@ -1119,6 +1137,7 @@ def plot_latent_space(results, L = 2500):
 
     # Case: Spherical S^1
     elif Model == "Spherical" and d == 2:
+        A = results['inputs']['Y']
         angles = np.arctan2(samples_Z[:, :, 1], samples_Z[:, :, 0])  
         angles = (angles + 2*np.pi) % (2*np.pi)  
         n_nodes = angles.shape[1]
@@ -1126,7 +1145,7 @@ def plot_latent_space(results, L = 2500):
         r0 = 0.3 
         delta_r = 0.4  
 
-        colors = sns.color_palette("tab20", n_nodes)
+        
         fig, ax = plt.subplots(figsize=(10, 10), subplot_kw={'projection': 'polar'})
 
         bins = 200 
@@ -1138,7 +1157,6 @@ def plot_latent_space(results, L = 2500):
             bin_centers = bin_edges[:-1] + widths/2
 
             inner_radius = r0 + i * delta_r
-
             max_height = counts.max() if counts.max() > 0 else 1
             heights = counts / max_height * delta_r * 0.9
 
@@ -1153,26 +1171,68 @@ def plot_latent_space(results, L = 2500):
                 alpha=0.8,
                 label=f"Node {i}"
             )
-        ax.set_title("Latent Space on S¹", fontsize=20, pad=30)
-        ax.set_theta_zero_location("E") 
-        ax.set_theta_direction(1)     
+
+        mean_angles = np.arctan2(
+            np.mean(np.sin(angles), axis=0),
+            np.mean(np.cos(angles), axis=0)
+        )
+        mean_angles = (mean_angles + 2*np.pi) % (2*np.pi)
+        mean_radii = r0 + np.arange(n_nodes) * delta_r + delta_r * 0.45  
+
+
+        for i in range(n_nodes):
+            for j in range(i + 1, n_nodes):
+                if A[i, j] == 1:
+                    theta_i, theta_j = mean_angles[i], mean_angles[j]
+                    r_i, r_j = mean_radii[i], mean_radii[j]
+                    ax.plot([theta_i, theta_j], [r_i, r_j], color='black', linewidth=2.0, alpha=0.9, zorder=1)
+
+
+        for i in range(n_nodes):
+            ax.text(
+                mean_angles[i],
+                mean_radii[i] + 0.05,
+                f"{i}",
+                fontsize=9,
+                ha='center',
+                va='center',
+                weight='bold',
+                bbox=dict(facecolor='white', alpha=0.8, edgecolor='none', boxstyle='round,pad=0.2'),
+                zorder=4
+            )
+
+        ax.set_title("Latent space on S1", fontsize=20, pad=30)
+        ax.set_theta_zero_location("E")
+        ax.set_theta_direction(1)
         ax.set_yticklabels([])
-        def format_func(x, pos):
-            return f"{x:.1f}"
-
-        ax.xaxis.set_major_locator(ticker.MultipleLocator(np.pi/2))
-        ax.xaxis.set_major_formatter(ticker.FuncFormatter(lambda val, pos: f"{val/np.pi:.2f}π"))
-
         ax.set_rlim(0, r0 + n_nodes * delta_r + 0.2)
+        ax.xaxis.set_major_locator(ticker.MultipleLocator(np.pi/8))
+        from fractions import Fraction
+        def custom_formatter(val, pos):
+            val = val % (2 * np.pi)
+            frac = Fraction(val / np.pi).limit_denominator(8)  # 
+            if np.isclose(val, 0) or np.isclose(val, 2*np.pi):
+                return r"$0$"
+            numerator = frac.numerator
+            denominator = frac.denominator
+            if denominator == 1:
+                if numerator == 1:
+                    return rf"$\pi$"
+                return rf"${numerator}\pi$"
+            elif numerator == 1:
+                    return rf"$\frac{{\pi}}{{{denominator}}}$"
+            else:
+                return rf"$\frac{{{numerator}\pi}}{{{denominator}}}$"
 
-        ax.legend(loc='upper left', bbox_to_anchor=(1.05, 1), fontsize=12, title="Nodes")
+        ax.xaxis.set_major_formatter(ticker.FuncFormatter(custom_formatter))
+        ax.grid(False)
 
         plt.tight_layout()
         plt.show()
         
 
     else:
-        print(f"Model '{Model}' with dimension {d} not implemented.")
+        print(f"Model '{Model}' with dimension {d} not implemented.")  
 
 #############################################################################
 #############################################################################
@@ -1286,13 +1346,13 @@ def posterior_predictive_check(results, plot_statistics=True, plot_pairwise=True
     # Convert simulated stats into arrays
     stats_df = {key: [d[key] for d in stats_list] for key in stats_list[0]}
     stats_df["Modularity"] = modularities
-
+    selected_stats = list(stats_df.keys())
 
     if plot_statistics:
         # Plot posterior predictive histograms
         fig, axes = plt.subplots(2, 4, figsize=(24, 10))
         axes = axes.flatten()
-        selected_stats = list(stats_df.keys())
+        
 
         for i, stat in enumerate(selected_stats):
             values = np.array(stats_df[stat])
