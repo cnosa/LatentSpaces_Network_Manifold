@@ -1700,11 +1700,14 @@ def model_comparison(results_dict):
             'DIC': info_criteria['DIC'],
             'BIC': info_criteria['BIC'],
             'mean_log_likelihood' : np.mean(res['log_likelihood']),
-            'Min_Rhat': trace_diag['R_hat'].min(),
-            'Max_Rhat': trace_diag['R_hat'].max(),
-            'Min_ESSn': trace_diag['ESS/n'].min(),
-            'Max_ESSn': trace_diag['ESS/n'].max(),
-            'ROC_AUC': metrics['roc_auc'],
+            'ml_log_likelihood': res['point_estimators_log_likelihood']['ML'],
+            'cm_log_likelihood': res['point_estimators_log_likelihood']['CM'],
+            'map_log_likelihood': res['point_estimators_log_likelihood']['MAP'],
+            'min_Rhat': trace_diag['R_hat'].min(),
+            'max_Rhat': trace_diag['R_hat'].max(),
+            'min_ESSn': trace_diag['ESS/n'].min(),
+            'max_ESSn': trace_diag['ESS/n'].max(),
+            'AUC': metrics['roc_auc'],
             'Accuracy': metrics['accuracy'],
             'Precision': metrics['precision'],
             'Recall': metrics['recall'],
@@ -1727,9 +1730,563 @@ def model_comparison(results_dict):
         rows.append(row)
 
     df = pd.DataFrame(rows)
-    df = df.sort_values(by='WAIC')  # sort by WAIC as default
-
     return df
+
+
+def plot_loglikelihood_comparison(results_dict, bins=75):
+    colors = {
+        'R2': '#1f77b4',  
+        'R3': '#ff7f0e',  
+        'S1': '#2ca02c',  
+        'S2': '#d62728'   
+    }
+    labels = {
+        'R2': r'$\mathbb{R}^2$',
+        'R3': r'$\mathbb{R}^3$',
+        'S1': r'$\mathbb{S}^1$',
+        'S2': r'$\mathbb{S}^2$'
+    }
+
+    fig = plt.figure(figsize=(12, 6), constrained_layout=True)
+    gs = fig.add_gridspec(4, 4)
+    ax_main = fig.add_subplot(gs[:, :-1])
+    ax_histy = fig.add_subplot(gs[:, -1], sharey=ax_main)
+
+    for key, result in results_dict.items():
+        y = result['log_likelihood']
+        x = range(len(y))
+        mean_y = np.mean(y)
+        color = colors.get(key, 'gray')
+        ax_main.scatter(x, y, alpha=0.5, s=10, label=labels[key], color=color)
+        ax_main.axhline(mean_y, color=color, linestyle='--', linewidth=1)
+        #q025, q975 = np.quantile(y, [0.025, 0.975])
+        #ax_main.axhline(q025, color=color, linestyle=':', linewidth=1)
+        #ax_main.axhline(q975, color=color, linestyle=':', linewidth=1)
+
+        ax_histy.hist(y, bins=bins, orientation='horizontal', color=color, alpha=0.5, density=True, label=labels[key])
+        ax_histy.axhline(mean_y, color=color, linestyle='--', linewidth=2)
+
+
+    ax_main.set_xlabel("Iteration", fontsize=12)
+    ax_main.set_ylabel("Loglikelihood", fontsize=12)
+    ax_main.grid(True, linestyle='--', alpha=0.1)
+    #ax_main.legend(fontsize=11)
+
+    ax_histy.set_xlabel("Density", fontsize=12)
+    ax_histy.tick_params(axis='y', left=False)
+    ax_histy.yaxis.set_major_locator(plt.MaxNLocator(nbins=12))
+    ax_histy.legend(title="Model", loc='lower right', fontsize=10, title_fontsize=11)
+    ax_histy.grid(False)
+
+    plt.show()
+
+
+def compare_posterior_predictive_checks(results_dict):
+    colors = {
+        'R2': '#1f77b4',
+        'R3': '#ff7f0e',
+        'S1': '#2ca02c',
+        'S2': '#d62728'
+    }
+
+    labels = {
+        'R2': r'$\mathbb{R}^2$',
+        'R3': r'$\mathbb{R}^3$',
+        'S1': r'$\mathbb{S}^1$',
+        'S2': r'$\mathbb{S}^2$'
+    }
+
+    stat_names = ['Density', 'Transitivity', 'Assortativity',
+                  'Average degree', 'Degree sd', 'Average path length',
+                  'Diameter', 'Modularity']
+
+    fig, axes = plt.subplots(2, 4, figsize=(24, 10))
+    axes = axes.flatten()
+
+    # Compute observed statistics once
+    observed_stats_dict = {}
+    for key, results in results_dict.items():
+        Y = results['inputs']['Y']
+        G_obs = nx.from_numpy_array(Y)
+        if not nx.is_connected(G_obs):
+            G_obs = G_obs.subgraph(max(nx.connected_components(G_obs), key=len)).copy()
+        degrees = np.array([deg for _, deg in G_obs.degree()])
+        observed_stats_dict[key] = {
+            'Density': nx.density(G_obs),
+            'Transitivity': nx.transitivity(G_obs),
+            'Assortativity': nx.degree_assortativity_coefficient(G_obs),
+            'Average degree': degrees.mean(),
+            'Degree sd': degrees.std(),
+            'Average path length': nx.average_shortest_path_length(G_obs),
+            'Diameter': nx.diameter(G_obs),
+            'Modularity': nx.community.modularity(G_obs, list(greedy_modularity_communities(G_obs)))
+        }
+
+    # Simulate for each model and collect all statistics
+    for key, results in results_dict.items():
+        Z_samples = results['samples']['Z']
+        alpha_samples = results['samples']['alpha']
+        beta_samples = results['samples'].get('beta', None)
+        model_type = results['Model']
+        L = Z_samples.shape[0]
+
+        sim_stats = {stat: [] for stat in stat_names}
+
+        for l in range(L):
+            Z = Z_samples[l]
+            alpha = alpha_samples[l]
+            beta = beta_samples[l] if beta_samples is not None else None
+
+            if model_type == "Euclidean":
+                D = np.linalg.norm(Z[:, None, :] - Z[None, :, :], axis=2)
+                np.fill_diagonal(D, np.inf)
+                P = expit(alpha - D)
+            else:
+                dot = np.dot(Z, Z.T)
+                np.fill_diagonal(dot, -np.inf)
+                P = expit(alpha + beta * dot)
+
+            A_sim = np.random.binomial(1, P)
+            A_sim = np.triu(A_sim, 1)
+            A_sim += A_sim.T
+            G_sim = nx.from_numpy_array(A_sim)
+
+            try:
+                if not nx.is_connected(G_sim):
+                    G_sim = G_sim.subgraph(max(nx.connected_components(G_sim), key=len)).copy()
+            except nx.NetworkXException:
+                continue
+
+            try:
+                degrees_sim = np.array([deg for _, deg in G_sim.degree()])
+                sim_stats['Density'].append(nx.density(G_sim))
+                sim_stats['Transitivity'].append(nx.transitivity(G_sim))
+                sim_stats['Assortativity'].append(nx.degree_assortativity_coefficient(G_sim))
+                sim_stats['Average degree'].append(degrees_sim.mean())
+                sim_stats['Degree sd'].append(degrees_sim.std())
+                sim_stats['Average path length'].append(nx.average_shortest_path_length(G_sim))
+                sim_stats['Diameter'].append(nx.diameter(G_sim))
+                sim_stats['Modularity'].append(nx.community.modularity(G_sim, list(greedy_modularity_communities(G_sim))))
+            except:
+                continue
+
+        # Plot each stat
+        for i, stat in enumerate(stat_names):
+            ax = axes[i]
+            sim_array = np.array(sim_stats[stat])
+            obs_value = observed_stats_dict[key][stat]
+
+            # Compute p-value
+            p_val = min(np.mean(sim_array >= obs_value), 1.0)
+            stat_mean = sim_array.mean()
+            label_with_p = f"{labels[key]} (p={p_val:.3f})"
+
+            ax.hist(sim_array, bins=50, density=True, alpha=0.3, color=colors[key], label=label_with_p)
+            ax.axvline(obs_value, color='black', linewidth=4, linestyle='--')
+            ax.axvline(stat_mean, color=colors[key], linestyle=':', linewidth=3)
+            ax.set_title(stat, fontsize=14)
+            ax.legend()
+
+    plt.tight_layout()
+    plt.show()
+
+def pairwise_sociomatrix_plot_all_models(results_dict):
+    model_keys = list(results_dict.keys())
+    n = results_dict[model_keys[0]]['inputs']['Y'].shape[0]
+
+    A_real = results_dict[model_keys[0]]['inputs']['Y']
+
+    colors = {
+        'R2': '#1f77b4',
+        'R3': '#ff7f0e',
+        'S1': '#2ca02c',
+        'S2': '#d62728'
+    }
+    mean_probs_dict = {}
+    samples_dict = {}
+
+    for key in model_keys:
+        results = results_dict[key]
+        Z = results['samples']['Z']
+        alpha = results['samples']['alpha']
+        beta = results['samples'].get('beta', None)
+        Model = results['Model']
+        L, _, _ = Z.shape
+
+        probs_samples = np.zeros((L, n, n))
+
+        for l in range(L):
+            for i in range(n):
+                for j in range(n):
+                    if i != j:
+                        if Model == "Euclidean":
+                            dist = np.linalg.norm(Z[l, i] - Z[l, j])
+                            eta = alpha[l] - dist
+                        else:
+                            dot = np.dot(Z[l, i], Z[l, j])
+                            eta = alpha[l] + beta[l] * dot
+                        probs_samples[l, i, j] = expit(eta)
+
+        mean_probs_dict[key] = probs_samples.mean(axis=0)
+        samples_dict[key] = probs_samples
+
+    fig, axes = plt.subplots(n, n, figsize=(15, 15))
+    cmap = sns.color_palette("Greys", as_cmap=True)
+
+    for i in range(n):
+        for j in range(n):
+            ax = axes[i, j]
+            ax.set_xticks([])
+            ax.set_yticks([])
+
+
+            if i == 0 and j == 0:
+                ax.set_title('0', fontsize=10)
+                ax.set_ylabel('0', fontsize=10, rotation=0, labelpad=25, va='center')
+            elif i == 0:
+                ax.set_title(f'{j}', fontsize=10)
+            elif j == 0:
+                ax.set_ylabel(f'{i}', fontsize=10, rotation=0, labelpad=25, va='center')
+            
+
+
+            if i > j:
+                text_lines = []
+                for model_key in model_keys:
+                    val = mean_probs_dict[model_key][i, j]
+                    text_lines.append(f"{model_key}: {val:.2f}")
+                bg_value = A_real[i, j]
+                ax.set_facecolor(cmap(bg_value))
+                text_color = 'white' if bg_value > 0.5 else 'black'
+                ax.text(0.5, 0.5, "\n".join(text_lines), ha='center', va='center',
+                        fontsize=9.5, color=text_color)
+
+            elif i < j:
+                for model_key in model_keys:
+                    vals = samples_dict[model_key][:, i, j]
+                    mean_val = vals.mean()
+                    color = colors[model_key]  
+
+                    sns.histplot(vals, bins=30, ax=ax, element="step", label=model_key,
+                                kde=False, stat="density", color=color)
+                    ax.axvline(mean_val, linestyle='--', linewidth=1.0, color=color)
+
+                edge_val = A_real[i, j]
+                ax.axvline(edge_val, color='black', linewidth=2.0)
+                ax.set_xlim(-0.1, 1.1)
+
+            else:
+                ax.axis('off')
+
+
+    handles, labels = axes[0, 1].get_legend_handles_labels()
+    if handles:
+        axes[0, 0].legend(handles, labels, fontsize=8, loc='upper left')
+
+    plt.tight_layout()
+    plt.show()
+
+
+def compare_prediction_evaluation(results_dict, threshold=0.5, plot=True, verbose=True):
+    from sklearn.metrics import roc_curve, auc
+
+    colors = {
+        'R2': '#1f77b4',  
+        'R3': '#ff7f0e', 
+        'S1': '#2ca02c',  
+        'S2': '#d62728'  
+    }
+
+
+    labels = {
+        'R2': r'$\mathbb{R}^2$',
+        'R3': r'$\mathbb{R}^3$',
+        'S1': r'$\mathbb{S}^1$',
+        'S2': r'$\mathbb{S}^2$'
+    }
+
+    metrics_all = []
+
+    if plot:
+        plt.figure(figsize=(7, 6))
+
+    for key, results in results_dict.items():
+        Y = results['inputs']['Y']
+        Model = results['Model']
+        n = Y.shape[0]
+        samples_Z = results['samples']['Z']
+        samples_alpha = results['samples']['alpha']
+        samples_beta = results['samples'].get('beta', None)
+        L = samples_Z.shape[0]
+        probs = np.zeros((n, n))
+
+        for l in range(L):
+            for i in range(n):
+                for j in range(n):
+                    if i != j:
+                        if samples_beta is None:
+                            dist = np.linalg.norm(samples_Z[l, i] - samples_Z[l, j])
+                            eta = samples_alpha[l] - dist
+                        else:
+                            dot = np.dot(samples_Z[l, i], samples_Z[l, j])
+                            eta = samples_alpha[l] + samples_beta[l] * dot
+                        probs[i, j] += expit(eta)
+        probs /= L
+
+        tri_mask = np.triu_indices_from(Y, k=1)
+        y_true = (Y[tri_mask] > 0.5).astype(int)
+        y_score = probs[tri_mask].flatten()
+        fpr, tpr, _ = roc_curve(y_true, y_score)
+        roc_auc = auc(fpr, tpr)
+        y_pred = (y_score >= threshold).astype(int)
+
+        tp = np.sum((y_true == 1) & (y_pred == 1))
+        tn = np.sum((y_true == 0) & (y_pred == 0))
+        fp = np.sum((y_true == 0) & (y_pred == 1))
+        fn = np.sum((y_true == 1) & (y_pred == 0))
+
+        accuracy = (tp + tn) / (tp + tn + fp + fn)
+        precision = tp / (tp + fp) if (tp + fp) > 0 else 0.0
+        recall = tp / (tp + fn) if (tp + fn) > 0 else 0.0
+        f1 = 2 * precision * recall / (precision + recall) if (precision + recall) > 0 else 0.0
+        specificity = tn / (tn + fp) if (tn + fp) > 0 else 0.0
+
+        if plot:
+            plt.plot(fpr, tpr, color=colors[key], label=f"{labels[key]}")
+
+        if verbose:
+            print("="*60)
+            print(f"Model: {Model} ({key})")
+            print(f"Confusion matrix: tp={tp}, tn={tn}, fp={fp}, fn={fn}")
+            print(f"AUC: {roc_auc:.4f} | Accuracy: {accuracy:.4f} | Precision: {precision:.4f}")
+            print(f"Recall: {recall:.4f} | F1-score: {f1:.4f} | Specificity: {specificity:.4f}")
+
+        metrics_all.append({
+            'Model': key,
+            'AUC': roc_auc,
+            'Accuracy': accuracy,
+            'Precision': precision,
+            'Recall': recall,
+            'F1': f1,
+            'Specificity': specificity,
+            'TP': tp,
+            'TN': tn,
+            'FP': fp,
+            'FN': fn
+        })
+
+    if plot:
+        plt.plot([0, 1], [0, 1], linestyle='--', color='gray')
+        plt.xlabel("False Positive Rate")
+        plt.ylabel("True Positive Rate")
+        plt.legend()
+        plt.grid(True, linestyle='--', alpha=0.5)
+        plt.tight_layout()
+        plt.show()
+
+    return pd.DataFrame(metrics_all)
+
+
+def latent_variance(results_dict):
+    variances = {}
+    for key, results in results_dict.items():
+        samples = results['samples']['Z'] # shape: (S, N, d) 
+        if results['Model'] == "Euclidean":
+            samples = results['samples']['Z']   
+            mean = samples.mean(axis=0)  # (N, D)
+            diffs = samples - mean[None, :, :]  # (S, N, D)
+            covs = np.einsum('snd,sne->nde', diffs, diffs) / samples.shape[0] 
+        if results['Model'] == "Spherical":
+            mean = samples.mean(axis=0)  # (N, D)
+            mean = mean / np.linalg.norm(mean, axis=1, keepdims=True) 
+            diffs = samples - mean[None, :, :]
+            covs = np.einsum('snd,sne->nde', diffs, diffs) / samples.shape[0]
+        variances[key] = np.trace(covs, axis1=1, axis2=2)  # (N,)
+    return pd.DataFrame(variances)
+
+
+def centrality_analysis(results_dict):
+    dfs_centrality = {}
+    dfs_correlation = {}
+    for key, results in results_dict.items():
+        Model = results['Model']
+        Y = results['inputs']['Y']
+        G = nx.from_numpy_array(Y)
+        samples_Z = results['samples']['Z']
+        samples_alpha = results['samples']['alpha']
+        if Model=='Spherical': samples_beta = results['samples'].get('beta', None)
+        L, n, d = samples_Z.shape
+
+        centrality_measures = { }
+
+        if Model == "Euclidean":
+            Z_mean = samples_Z.mean(axis=0)
+            D = np.linalg.norm(samples_Z[:, :, None, :] - samples_Z[:, None, :, :], axis=3)
+            P = expit(samples_alpha[:, None, None] - D)
+            for i in range(n):
+                centrality_measures[i] = {
+                    'degree': G.degree[i],
+                    'closeness': nx.closeness_centrality(G, i),
+                    'probability connection': np.mean(P[:, i, :]),
+                    'mean distance': np.mean(D[:, i, :]),
+                    'center distance': np.mean([np.linalg.norm(samples_Z[l, i ,:] - Z_mean[i]) for l in range(L)]),
+                }
+        if Model == "Spherical":
+            Z_mean = samples_Z.mean(axis=0)
+            for i in range(n):
+                Z_mean[i] /= np.linalg.norm(Z_mean[i])
+            D = np.einsum('sin,sjn->sij', samples_Z, samples_Z)
+            GD = np.arccos(np.clip(D, -1.0, 1.0)) / np.pi
+
+            P = expit(samples_alpha[:, None, None] + (samples_beta[:, None, None] * D ))
+
+            for i in range(n):
+                centrality_measures[i] = {
+                    'degree': G.degree[i],
+                    'closeness': nx.closeness_centrality(G, i),
+                    'probability connection': np.mean(P[:, i, :]),
+                    'mean distance': np.mean(GD[:, i, :]),
+                    'center distance': np.mean([np.arccos(np.dot(samples_Z[l, i ,:],Z_mean[i]))/np.pi for l in range(L)]),
+                }
+
+    
+        dfs_centrality[key] =  pd.DataFrame(centrality_measures).T
+
+        dfs_correlation[key] = {'Degree vs Probability connection': np.corrcoef(
+            dfs_centrality[key]['degree'], 
+            dfs_centrality[key]['probability connection']
+        )[0, 1],
+        'Degree vs Mean distance': np.corrcoef(
+            dfs_centrality[key]['degree'], 
+            dfs_centrality[key]['mean distance']
+        )[0, 1],
+        'Degree vs Center distance': np.corrcoef(
+            dfs_centrality[key]['degree'], 
+            dfs_centrality[key]['center distance']
+        )[0, 1]}
+    
+    dfs_centrality['correlation'] = pd.DataFrame(dfs_correlation).T
+
+    return dfs_centrality
+
+from sklearn.metrics import silhouette_score
+from sklearn.cluster import SpectralClustering
+from networkx.algorithms.community import greedy_modularity_communities
+
+def latent_clustering(results_dict, k_range=range(2, 6)):
+    clustering_statistics = []
+    for key, results in results_dict.items():
+        Y = results['inputs']['Y']
+        G = nx.from_numpy_array(Y)
+        n = Y.shape[0]
+        Model = results['Model']
+        partitions = []
+        for Z in [results['ml_estimate']['Z'], results['cm_estimate']['Z'],results['map_estimate']['Z']]:
+            similarity = np.zeros((n, n))
+
+            for i in range(n):
+                for j in range(i+1, n):
+                    if Model == "Euclidean":
+                        dist = np.linalg.norm(Z[i] - Z[j])
+                        sim = np.exp(-1 * dist**2)
+                    elif Model == "Spherical":
+                        sim = np.exp(np.dot(Z[i], Z[j])-1) 
+                    
+                    similarity[i, j] = sim
+                    similarity[j, i] = sim
+
+
+            distance_matrix = 1 - similarity
+            np.fill_diagonal(distance_matrix, 0)
+
+            best_score = -1
+            best_k = None
+            best_labels = None
+            best_latent_communities = None
+
+            for k in k_range:
+                try:
+                    clustering = SpectralClustering(
+                        n_clusters=k,
+                        affinity='precomputed',
+                        assign_labels='kmeans',
+                        random_state=42
+                    )
+                    labels = clustering.fit_predict(similarity)
+                    latent_communities = [[i for i, l in enumerate(labels) if l == tag] for tag in np.unique(labels)]
+                    score = silhouette_score(distance_matrix, labels, metric='precomputed')
+                    
+                    if score > best_score:
+                        best_score = score
+                        best_k = k
+                        best_labels = labels
+                        best_latent_communities = latent_communities
+                except Exception:
+                    continue
+            partitions.append({
+                'k': best_k,
+                'labels': best_labels,
+                'score': best_score,
+                'latent_communities': best_latent_communities,
+                'modularity': nx.community.modularity(nx.from_numpy_array(Y), latent_communities)
+            })
+        best_partition = max(partitions, key=lambda x: x['modularity'])
+        k = best_partition['k']
+        labels = best_partition['labels']
+        
+        palette = sns.color_palette("tab20", n)
+        node_colors = [palette[label] for label in labels]
+
+
+        pos = nx.spring_layout(G, seed=80) 
+        plt.figure(figsize=(10, 8))
+        nx.draw(
+            G,
+            pos,
+            with_labels=True,
+            node_color=node_colors,
+            node_size=1500,
+            edge_color='gray',
+            alpha=0.8, 
+            font_size=18
+        )
+        plt.show()
+        clustering_statistics.append({
+            'Model': key,
+            'k': k,
+            'modularity': best_partition['modularity']
+        })
+
+    comms_obs = list(greedy_modularity_communities(G))
+    labels = np.zeros(n, dtype=int)
+    for tag, community in enumerate(comms_obs):
+        for node in community:
+            labels[node] = tag
+    real_modularity = nx.community.modularity(G, comms_obs)
+    clustering_statistics.append({
+            'Model': 'Observed',
+            'k': len(comms_obs),
+            'modularity': real_modularity
+        })
+    palette = sns.color_palette("tab20", n)
+    node_colors = [palette[label] for label in labels]
+
+
+    pos = nx.spring_layout(G, seed=80) 
+    plt.figure(figsize=(10, 8))
+    nx.draw(
+        G,
+        pos,
+        with_labels=True,
+        node_color=node_colors,
+        node_size=1500,
+        edge_color='gray',
+        alpha=0.8, 
+        font_size=18
+    )
+    plt.show()
+
+    return pd.DataFrame(clustering_statistics)
 
 #############################################################################
 #############################################################################
