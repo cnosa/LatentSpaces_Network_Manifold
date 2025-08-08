@@ -699,10 +699,10 @@ def Estimation_LSMN(Y, Theta, Model):
                     proposed_p_l = current_p_l.copy()
                     # Leapfrog integration
                     for _ in range(L_Z):
-                        proposed_p_l += 0.5 * epsilon_Z * grad_log_Z_i(l, (Z_proposed, alpha_current))
+                        proposed_p_l += 0.5 * epsilon_Z * grad_log_Z_i(l, (Z_proposed, alpha_current, beta_current))
                         proposed_p_l = project_to_tangent_space(Z_proposed[l,:], proposed_p_l)
                         Z_proposed[l,:] , proposed_p_l = geodesic_flow(Z_proposed[l,:], proposed_p_l, epsilon_Z)
-                        proposed_p_l += 0.5 * epsilon_Z * grad_log_Z_i(l, (Z_proposed, alpha_current))
+                        proposed_p_l += 0.5 * epsilon_Z * grad_log_Z_i(l, (Z_proposed, alpha_current, beta_current))
                         proposed_p_l = project_to_tangent_space(Z_proposed[l,:], proposed_p_l)
                     # Hamiltonian
                     proposed_ll = log_likelihood((Z_proposed, alpha_current, beta_current))
@@ -726,18 +726,24 @@ def Estimation_LSMN(Y, Theta, Model):
             alpha_proposed =  np.random.normal(alpha_current, sigma_q_alpha)
             current_p_alpha = np.random.normal(0, sigma_q_alpha)
             proposed_p_alpha = current_p_alpha
-            # Leapfrog integration
-            for _ in range(L_alpha):
-                proposed_p_alpha += 0.5 * epsilon_alpha * grad_log_alpha((Z_current, alpha_proposed))
-                alpha_proposed += epsilon_alpha * proposed_p_alpha / sigma_q_alpha**2
-                proposed_p_alpha += 0.5 * epsilon_alpha * grad_log_alpha((Z_current, alpha_proposed))
+            
 
             if Model == "Euclidean":
+                    # Leapfrog integration
+                    for _ in range(L_alpha):
+                        proposed_p_alpha += 0.5 * epsilon_alpha * grad_log_alpha((Z_current, alpha_proposed))
+                        alpha_proposed += epsilon_alpha * proposed_p_alpha / sigma_q_alpha**2
+                        proposed_p_alpha += 0.5 * epsilon_alpha * grad_log_alpha((Z_current, alpha_proposed))
                     proposed_params = (Z_current, alpha_proposed)
                     proposed_ll = log_likelihood(proposed_params)
                     proposed_lp = log_prior(proposed_params)
                     H_current = - log_likelihood((Z_current, alpha_current)) - log_prior((Z_current, alpha_current)) + 0.5 * np.sum(current_p_alpha**2) / sigma_q_alpha**2
             if Model == "Spherical":
+                # Leapfrog integration
+                for _ in range(L_alpha):
+                    proposed_p_alpha += 0.5 * epsilon_alpha * grad_log_alpha((Z_current, alpha_proposed, beta_current))
+                    alpha_proposed += epsilon_alpha * proposed_p_alpha / sigma_q_alpha**2
+                    proposed_p_alpha += 0.5 * epsilon_alpha * grad_log_alpha((Z_current, alpha_proposed, beta_current))
                 proposed_params = (Z_current, alpha_proposed, beta_current)
                 proposed_ll = log_likelihood(proposed_params)
                 proposed_lp = log_prior(proposed_params)

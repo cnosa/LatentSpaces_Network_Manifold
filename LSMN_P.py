@@ -1019,13 +1019,16 @@ import pandas as pd
 import plotly.express as px
 import plotly.graph_objects as go
 import matplotlib.ticker as ticker
+from ridgeplot import ridgeplot
+from matplotlib.colors import to_hex
 
-def plot_latent_space(results, L = 1500):
+
+def plot_latent_space(results, L = 3000):
     """
-    Visualize latent space for Euclidean and Spherical models in R^2, R^3, S^1 or S^2.
+    Visualize latent space for Euclidean and Spherical models in R^1, R^2, R^3, S^1 or S^2.
 
     Parameters:
-        results (dict): Output from MH algorithm.
+        results (dict): Output from estimation algorithm.
     """
     samples_Z = results['samples']['Z'][-L:]
     Model = results['Model']
@@ -1033,8 +1036,67 @@ def plot_latent_space(results, L = 1500):
     n = samples_Z.shape[1]
     colors = sns.color_palette("tab20", n)
 
+    # Case: Euclidean R^1
+    if Model == "Euclidean" and d == 1:
+        from matplotlib.colors import to_hex
+        A = results['inputs']['Y']
+        samples_list = [samples_Z[:, i, 0] for i in range(n)]
+        node_labels = [f"{i}" for i in range(n)]
+        color_list = [to_hex(c) for c in colors]
+        color_list.reverse()
+        fig = ridgeplot(
+            samples=samples_list,
+            labels=node_labels,
+            line_width=1.5,
+            nbins=50,
+            spacing=0.5,
+            colorscale= color_list,
+            colormode= "row-index"
+        )
+        means = [np.mean(s) for s in samples_list]
+        y_at_mean = [88*(i+1) for i in range(0, -n, -1)]
+        for i, m in enumerate(means):
+            fig.add_annotation(
+                x=m,
+                y=y_at_mean[i],
+                xref="x",
+                yref="y",
+                text=str(i),
+                showarrow=False,
+                font=dict(size=9, color="black"),
+                bgcolor="white",
+                borderpad=2
+            )
+
+        for i in range(n):
+            for j in range(i + 1, n):
+                if A[i, j] == 1:
+                    fig.add_shape(
+                        type="line",
+                        x0=means[i],
+                        y0=y_at_mean[i],
+                        x1=means[j],
+                        y1=y_at_mean[j],
+                        xref="x",
+                        yref="y",
+                        line=dict(color="black", width=1.2),
+                        layer="above"
+                    )
+
+        fig.update_layout(
+            title="Latent space in R1",
+            xaxis_title="Latent position",
+            yaxis_title="",
+            showlegend=False,
+            xaxis=dict(showgrid=False, zeroline=False),
+            yaxis=dict(showgrid=True, zeroline=False, gridcolor='lightgrey'),
+            plot_bgcolor='white',  
+            paper_bgcolor='white' 
+        )
+
+        fig.show()
     # Case: Euclidean R^2
-    if Model == "Euclidean" and d == 2:
+    elif Model == "Euclidean" and d == 2:
         A = results['inputs']['Y']
         num_samples = samples_Z.shape[0]
         fig, ax = plt.subplots(figsize=(9, 9))
