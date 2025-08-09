@@ -1417,13 +1417,13 @@ def posterior_predictive_check(results, plot_statistics=True, plot_pairwise=True
     # Convert simulated stats into arrays
     stats_df = {key: [d[key] for d in stats_list] for key in stats_list[0]}
     stats_df["Modularity"] = modularities
-
+    selected_stats = list(stats_df.keys())
 
     if plot_statistics:
         # Plot posterior predictive histograms
         fig, axes = plt.subplots(2, 4, figsize=(24, 10))
         axes = axes.flatten()
-        selected_stats = list(stats_df.keys())
+        
 
         for i, stat in enumerate(selected_stats):
             values = np.array(stats_df[stat])

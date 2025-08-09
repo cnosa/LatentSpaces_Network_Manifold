@@ -1797,12 +1797,14 @@ def model_comparison(results_dict):
 
 def plot_loglikelihood_comparison(results_dict, bins=75):
     colors = {
+        'R1': '#ffff00',
         'R2': '#1f77b4',  
         'R3': '#ff7f0e',  
         'S1': '#2ca02c',  
         'S2': '#d62728'   
     }
     labels = {
+        'R1': r'$\mathbb{R}^1$',
         'R2': r'$\mathbb{R}^2$',
         'R3': r'$\mathbb{R}^3$',
         'S1': r'$\mathbb{S}^1$',
@@ -1845,6 +1847,7 @@ def plot_loglikelihood_comparison(results_dict, bins=75):
 
 def compare_posterior_predictive_checks(results_dict):
     colors = {
+        'R1': '#ffff00',
         'R2': '#1f77b4',
         'R3': '#ff7f0e',
         'S1': '#2ca02c',
@@ -1852,6 +1855,7 @@ def compare_posterior_predictive_checks(results_dict):
     }
 
     labels = {
+        'R1': r'$\mathbb{R}^1$',
         'R2': r'$\mathbb{R}^2$',
         'R3': r'$\mathbb{R}^3$',
         'S1': r'$\mathbb{S}^1$',
@@ -1959,6 +1963,7 @@ def pairwise_sociomatrix_plot_all_models(results_dict):
     A_real = results_dict[model_keys[0]]['inputs']['Y']
 
     colors = {
+        'R1': '#ffff00',
         'R2': '#1f77b4',
         'R3': '#ff7f0e',
         'S1': '#2ca02c',
@@ -2053,6 +2058,7 @@ def compare_prediction_evaluation(results_dict, threshold=0.5, plot=True, verbos
     from sklearn.metrics import roc_curve, auc
 
     colors = {
+        'R1': '#ffff00',
         'R2': '#1f77b4',  
         'R3': '#ff7f0e', 
         'S1': '#2ca02c',  
@@ -2061,6 +2067,7 @@ def compare_prediction_evaluation(results_dict, threshold=0.5, plot=True, verbos
 
 
     labels = {
+        'R1': r'$\mathbb{R}^1$',
         'R2': r'$\mathbb{R}^2$',
         'R3': r'$\mathbb{R}^3$',
         'S1': r'$\mathbb{S}^1$',
