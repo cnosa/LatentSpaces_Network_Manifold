@@ -61,7 +61,7 @@ def random_VMF(mu, kappa, size=None):
     d = mu.shape[0]
 
     if d == 1:
-        return mu[0,0] * (2*np.random.binomial(n=1, p=expit(kappa), size=(size,1))-1)
+        return mu[0] * (2*np.random.binomial(n=1, p=expit(kappa), size=(size,1))-1)
 
     if size is None:
         n = 1
