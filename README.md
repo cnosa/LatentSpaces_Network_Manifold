@@ -10,7 +10,7 @@ This repository contains experiments and analyses of latent space models applied
 
 We implement latent space models in the following geometries:
 
-- **\(\mathbb{R}^2\), \(\mathbb{R}^3\)**: Euclidean latent spaces
+- **\(\mathbb{R}^1\), \(\mathbb{R}^2\), \(\mathbb{R}^3\)**: Euclidean latent spaces
 - **\(\mathbb{S}^1\), \(\mathbb{S}^2\)**: Spherical latent spaces
 
 Each model infers a posterior distribution over node positions, which is then used to interpret structural features of the observed network.
@@ -25,5 +25,4 @@ Each model infers a posterior distribution over node positions, which is then us
 
 - Python 3.8+
 - `numpy`, `scipy`, `pandas`, `matplotlib`, `seaborn`
-- `jax` or `pymc` if using HMC-based inference
 - `pickle` (for result serialization)
