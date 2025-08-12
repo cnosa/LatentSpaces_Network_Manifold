@@ -312,6 +312,26 @@ def compute_model_criteria(Y, samples_Z, samples_alpha, samples_beta=None):
 # Estimation procedure
 
 def Estimation_LSMN(Y, Theta, Model):
+    """
+    Performs Bayesian estimation for Latent Space Models on Networks (LSMN) using a Metropolis-Hastings (MH) algorithm.
+
+    This function supports two types of latent space models: "Euclidean" and "Spherical". It first finds a Maximum Likelihood Estimate (MLE) to initialize the chains and then runs multiple MH chains to sample from the posterior distribution of the parameters. The parameters include latent positions (Z) and model-specific parameters (alpha and beta).
+
+    The process includes:
+    1.  **Multi-start Gradient Ascent:** A search for a good initial parameter value (MLE) to improve MCMC convergence.
+    2.  **Metropolis-Hastings Sampling:** Iteratively proposes and accepts/rejects new parameter values to generate posterior samples.
+    3.  **Adaptive Tuning:** The proposal distributions are adjusted during burn-in to maintain optimal acceptance rates.
+    4.  **Post-processing:** Aligns the latent positions (Z) using Procrustes analysis and computes various convergence diagnostics (R-hat, ESS) and model fit criteria (WAIC, DIC, BIC).
+
+    Returns a dictionary containing MCMC samples, point estimates (MLE, Conditional Mean, MAP), diagnostics, and information criteria.
+
+    Parameters:
+    -   Y (array): The network's adjacency matrix.
+    -   Theta (dict): A dictionary of initial parameters and settings for the MH algorithm.
+    -   Model (str): The type of latent space model, either "Euclidean" or "Spherical".
+    """
+    
+
     print("="*80)   
     print(f"Metropolis-Hastings for {Model} latent space models on networks")
     print("="*80)
@@ -1032,6 +1052,10 @@ def plot_latent_space(results, L = 3000):
 
     Parameters:
         results (dict): Output from estimation algorithm.
+        L (int): Number of samples to be visualized.
+
+    Output:
+        A figure of the respective latent space using Matplotlib or Plotly
     """
     samples_Z = results['samples']['Z'][-L:]
     Model = results['Model']
@@ -1323,8 +1347,12 @@ def posterior_predictive_check(results, plot_statistics=True, plot_pairwise=True
     Arguments:
         results: dict
             Output dictionary from Estimation_LSMN.
-        plot_pairwise: bool
+        plot_statistics: bool (default: True)
+            If True, plots histograms about selected network statistics using posterior predictive check.
+        plot_pairwise: bool (default: True)
             If True, generates pairwise sociomatrix plots.
+        dictionary_info: bool (default: False)
+            If True, return a dictionary with information about the posterior predictive check.
     """
 
     Y = results['inputs']['Y']
@@ -1644,6 +1672,8 @@ def prediction_evaluation(results, threshold=0.5, plot=True, verbose=True):
             Classification threshold for computing confusion matrix.
         plot : bool
             If True, plot the ROC curve.
+        verbose : bool
+            If True, return a dataframe with prediction metrics.
     """
 
     # Extract input data
@@ -1799,6 +1829,9 @@ def model_comparison(results_dict):
 
 
 def plot_loglikelihood_comparison(results_dict, bins=75):
+    """
+    Plot the chain and the histograms of different models saved in results_dict
+    """
     colors = {
         'R1': '#ffff00',
         'R2': '#1f77b4',  
@@ -2058,6 +2091,10 @@ def pairwise_sociomatrix_plot_all_models(results_dict):
 
 
 def compare_prediction_evaluation(results_dict, threshold=0.5, plot=True, verbose=True):
+    """
+    Computes and plot the prediction evaluation for different models.
+    """
+
     from sklearn.metrics import roc_curve, auc
 
     colors = {
@@ -2160,6 +2197,9 @@ def compare_prediction_evaluation(results_dict, threshold=0.5, plot=True, verbos
 
 
 def latent_variance(results_dict):
+    """
+    Computes the variance of latent positions for different models.
+    """
     variances = {}
     for key, results in results_dict.items():
         samples = results['samples']['Z'] # shape: (S, N, d) 
@@ -2178,6 +2218,9 @@ def latent_variance(results_dict):
 
 
 def centrality_analysis(results_dict):
+    """
+    Execute the centrality analysis for network and for latent space models.
+    """
     dfs_centrality = {}
     dfs_correlation = {}
     for key, results in results_dict.items():
@@ -2246,6 +2289,9 @@ from sklearn.cluster import SpectralClustering
 from networkx.algorithms.community import greedy_modularity_communities
 
 def latent_clustering(results_dict, k_range=range(2, 6)):
+    """
+    Compute clustering techniques over latent spaces using spectral clustering with special affinity matrices.
+    """
     clustering_statistics = []
     for key, results in results_dict.items():
         Y = results['inputs']['Y']
