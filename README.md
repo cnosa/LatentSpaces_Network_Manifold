@@ -2,7 +2,7 @@
 
 This repository contains experiments and analyses of latent space models applied to network data, using both Euclidean and spherical geometries. The main goal is to assess how well these models capture social structure across various historical and synthetic networks.
 
-## Repository Structure
+## Repository structure
 
 - **`LATENTSPACES_NETWORK_MANIFOLD/`**
   - `AdditionalContent/` # Extra resources (images, tests)
@@ -13,6 +13,7 @@ This repository contains experiments and analyses of latent space models applied
   - `LSMN_P.py` # Main Python script
   - `README.md`
   - `requirements.txt`
+
 ## Models
 
 We implement latent space models in the following geometries:
@@ -22,7 +23,7 @@ We implement latent space models in the following geometries:
 
 Each model infers a posterior distribution over node positions, which is then used to interpret structural features of the observed network.
 
-## Case Studies
+## Case studies
 
 - **FlorentineFamilies**: Marriage network among 15th-century Florentine families, as analyzed by Padgett & Ansell (1993).
 - **Karate Club**: Zachary’s karate club network (1977), used as a benchmark example.
