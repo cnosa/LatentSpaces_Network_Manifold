@@ -1075,13 +1075,13 @@ def plot_latent_space(results, L = 3000):
             samples=samples_list,
             labels=node_labels,
             line_width=1.5,
-            nbins=50,
+            nbins=25,
             spacing=0.5,
             colorscale= color_list,
             colormode= "row-index"
         )
         means = [np.mean(s) for s in samples_list]
-        y_at_mean = [88*(i+1) for i in range(0, -n, -1)]
+        y_at_mean = [170*(i+1) for i in range(0, -n, -1)]
         for i, m in enumerate(means):
             fig.add_annotation(
                 x=m,
@@ -1111,14 +1111,16 @@ def plot_latent_space(results, L = 3000):
                     )
 
         fig.update_layout(
-            title="Latent space in R1",
-            xaxis_title="Latent position",
+            #title="Latent space in R1",
+            #xaxis_title="Latent position",
             yaxis_title="",
             showlegend=False,
             xaxis=dict(showgrid=False, zeroline=False),
             yaxis=dict(showgrid=True, zeroline=False, gridcolor='lightgrey'),
             plot_bgcolor='white',  
-            paper_bgcolor='white' 
+            paper_bgcolor='white',
+            width=800,
+            height=800,
         )
 
         fig.show()
@@ -1167,9 +1169,9 @@ def plot_latent_space(results, L = 3000):
                         zorder=0
                     )
 
-        ax.set_title("Latent space in R2", fontsize=16)
+        #ax.set_title("Latent space in R2", fontsize=16)
         ax.grid(False)
-        ax.set_aspect('equal', 'box')
+        #ax.set_aspect('equal', 'box')
         plt.tight_layout()
         plt.show()
 
@@ -1217,12 +1219,15 @@ def plot_latent_space(results, L = 3000):
                     ))
 
         fig.update_layout(
-            title=r"Latent space on R3" if Model == "Euclidean" else r"Latent space on S2",
+            #title=r"Latent space on R3" if Model == "Euclidean" else r"Latent space on S2",
             scene=dict(
-                xaxis_title="Dim 1",
-                yaxis_title="Dim 2",
-                zaxis_title="Dim 3"
-            )
+                xaxis_title="",
+                yaxis_title="",
+                zaxis_title=""
+            ),
+            width=1000,
+            height=1000,
+            showlegend=False,
         )
         fig.show()
 
@@ -1292,7 +1297,7 @@ def plot_latent_space(results, L = 3000):
                 zorder=4
             )
 
-        ax.set_title("Latent space on S1", fontsize=20, pad=30)
+        #ax.set_title("Latent space on S1", fontsize=20, pad=30)
         ax.set_theta_zero_location("E")
         ax.set_theta_direction(1)
         ax.set_yticklabels([])
