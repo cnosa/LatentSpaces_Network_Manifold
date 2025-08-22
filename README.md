@@ -1,6 +1,6 @@
 # LATENTSPACES_NETWORK_MANIFOLD
 
-This repository contains experiments and analyses of latent space models applied to network data, using both Euclidean and spherical geometries. The main goal is to assess how well these models capture social structure across various historical and synthetic networks. The code was executed on a laptop with an Intel Core i5 processor, 24 GB of RAM, and a 512 GB SSD.
+This repository contains experiments and analyses of latent space models applied to network data, using both Euclidean and spherical geometries. The main goal is to assess how well these models capture social structure across various historical and synthetic networks. The code was executed on a laptop with an Intel Core i5 processor, 8 GB of RAM, and a 512 GB SSD.
 
 ## Repository structure
 
@@ -57,7 +57,6 @@ If you use this repository or its results in your research, please cite it as:
 @article{sosanosa2025spherical,
   title   = {Spherical latent space models for social network analysis},
   author  = {Sosa, Juan and Nosa, Carlos},
-  journal = {Universidad Nacional de Colombia},
   year    = {2025},
   abstract= {This article introduces a spherical latent space model for social network analysis,
               embedding actors on a hypersphere rather than in Euclidean space as in standard
@@ -68,6 +67,7 @@ If you use this repository or its results in your research, please cite it as:
               positions and other model parameters. The approach is demonstrated using two benchmark social
               network datasets, yielding improved model fit and interpretability relative to conventional
               latent space models.},
-  keywords = {Bayesian inference, latent space models, network analysis, spherical geometry, social networks}
+  keywords = {Bayesian inference, latent space models, network analysis, spherical geometry, social networks},
+  url = {}
 }
 ```
